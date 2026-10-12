@@ -1,0 +1,94 @@
+// Bound-agent recipe (PORTAL-API §3, `tealbrick.recipe/1`): the zero-spine-change path for G7. The owner imports it in
+// Portal (`tealbrick recipe import` or the GUI) and applies it in the browser with ONE confirmation:
+//   0 agents.create      a new card (Core always creates it Free)
+//   1 agents.policy_set  mode bound, workflow = the allowed operations per product (grant `wf`), held + caps
+//   2… edges.create      one agent→app edge per product, CRUD = the access the workflow needs
+// Every id is a `$ref` to step 0's output; `ws` is absent (import fills it). Core refuses any other concrete id.
+import type { Allowed, Crud, Snapshot } from "./model.ts";
+import { normalizeAllowed } from "./model.ts";
+
+export const RECIPE_FORMAT = "tealbrick.recipe/1";
+/** Evolution itself: a Bound agent must be able to read its workflow. */
+export const SELF_OPS: Allowed = { product: "evolution", operations: ["workflow_get"], crud: ["read"] };
+/** A new card's policy revision in Core (agent_policies.revision starts at 1). */
+export const NEW_POLICY_REVISION = 1;
+/** Core defaults for a new card (PORTAL-API §2.1 Agent Policy); the owner can tighten them in Portal. */
+export const DEFAULT_HELD = ["destructive", "money"] as const;
+export const DEFAULT_CAPS = { write: { max: 500, per: "hour" }, outward: { max: 30, per: "hour" }, destructive: { max: 20, per: "day" } } as const;
+export const DEFAULT_HARNESS = "generic-mcp";
+
+export interface RecipeStep {
+  opId: "agents.create" | "agents.policy_set" | "edges.create";
+  input: Record<string, unknown>;
+}
+export interface Recipe {
+  format: typeof RECIPE_FORMAT;
+  title: string;
+  description: string | null;
+  steps: RecipeStep[];
+}
+
+const AGENT_REF = { $ref: "#/steps/0/output/id" } as const;
+
+function clip(s: string, n: number): string {
+  return s.length <= n ? s : `${s.slice(0, n - 1)}…`;
+}
+
+export function boundAllowed(allowed: readonly Allowed[]): Allowed[] {
+  return normalizeAllowed([...allowed, SELF_OPS]);
+}
+
+export function buildRecipe(
+  wf: { id: string; version: number; snapshot: Snapshot },
+  opts: { agentName?: string; harnessOptionId?: string } = {},
+): Recipe {
+  const allowed = boundAllowed(wf.snapshot.allowed);
+  const name = clip(opts.agentName?.trim() || `${wf.snapshot.title} (Bound)`, 64);
+  const purpose = clip(
+    `Bound agent for the Evolution workflow "${wf.snapshot.title}" v${wf.version}. Before each run, read it with evolution__workflow_get {"id":"${wf.id}"}. It may call only the allowed operations.`,
+    500,
+  );
+  const steps: RecipeStep[] = [
+    { opId: "agents.create", input: { name, purpose, harnessOptionId: opts.harnessOptionId ?? DEFAULT_HARNESS } },
+    {
+      opId: "agents.policy_set",
+      input: {
+        agt: AGENT_REF,
+        revision: NEW_POLICY_REVISION,
+        mode: "bound",
+        held: [...DEFAULT_HELD],
+        caps: structuredClone(DEFAULT_CAPS) as unknown as Record<string, unknown>,
+        workflow: allowed.map((a) => ({ product: a.product, operations: a.operations })),
+      },
+    },
+    ...allowed.map((a): RecipeStep => ({ opId: "edges.create", input: { agt: AGENT_REF, product: a.product, crud: [...a.crud] as Crud[] } })),
+  ];
+  const ops = allowed.map((a) => `${a.product}: ${a.operations.join(", ")}`).join("; ");
+  return {
+    format: RECIPE_FORMAT,
+    title: clip(`Bound agent: ${wf.snapshot.title} v${wf.version}`, 120),
+    description: clip(
+      `Creates one agent, sets it Bound and connects it to ${allowed.length} app(s). The agent may call only: ${ops}. The bridge blocks every other operation; it does not force the agent to follow the workflow steps. Trigger: ${wf.snapshot.trigger || "none set"} (no schedule runs yet).`,
+      2000,
+    ),
+    steps,
+  };
+}
+
+/** Portability rule Core applies on import (`recipe_not_portable`): no concrete Portal id anywhere. */
+export const PORTAL_ID = /^[a-z]{2,3}_[0-9A-HJKMNP-TV-Z]{26}$/;
+export function nonPortable(recipe: Recipe): string[] {
+  const bad: string[] = [];
+  const walk = (v: unknown, path: string): void => {
+    if (typeof v === "string") {
+      if (PORTAL_ID.test(v)) bad.push(path);
+    } else if (Array.isArray(v)) {
+      for (const [i, x] of v.entries()) walk(x, `${path}/${i}`);
+    } else if (v && typeof v === "object") for (const [k, x] of Object.entries(v)) walk(x, `${path}/${k}`);
+  };
+  recipe.steps.forEach((s, n) => {
+    if ("ws" in s.input) bad.push(`/steps/${n}/input/ws`);
+    walk(s.input, `/steps/${n}/input`);
+  });
+  return bad;
+}

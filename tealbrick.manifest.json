@@ -1,0 +1,3533 @@
+{
+  "$schema": "https://spec.opt2.tealbrick.com/manifest.schema.json",
+  "schema": "tealbrick.miniapp/2",
+  "id": "evolution",
+  "name": "Evolution",
+  "summary": "Evolution turns work your agents repeat into reviewed, versioned workflows that a Bound agent may run.",
+  "description": "Agents suggest a workflow when they repeat work, with evidence. Evolution also spots repeated done issues in Kanban. You review each suggestion, edit a draft (steps, allowed operations, trigger), promote it to a versioned workflow and export a recipe that creates a Bound agent in Portal. A Bound agent may call only the allowed operations; it is not forced to follow the steps.",
+  "version": "0.1.0",
+  "sdkMajor": 1,
+  "publisher": {
+    "name": "Teal Brick opt2"
+  },
+  "source": {
+    "repo": "https://github.com/Martin-Atrin/opt2-tealbrick-evolution",
+    "license": "MIT"
+  },
+  "icon": {
+    "svgPath": "M5 19V9 M12 19V5 M19 19v-7 M3 19h18 M5 9l7-4 7 7",
+    "viewBox": "0 0 24 24"
+  },
+  "discovery": {
+    "category": "productivity",
+    "intents": [
+      "automate work my agents repeat",
+      "review workflow suggestions",
+      "make a bound agent for a routine"
+    ],
+    "keywords": [
+      "workflow",
+      "automation",
+      "bound agent",
+      "suggestions"
+    ]
+  },
+  "runtime": {
+    "build": {
+      "context": ".",
+      "dockerfile": "Dockerfile"
+    },
+    "port": 8080,
+    "healthPath": "/tb/v1/health",
+    "resources": {
+      "cpu": 0.25,
+      "memoryMb": 256
+    },
+    "volumes": [
+      {
+        "id": "data",
+        "mountPath": "/data",
+        "sizeGb": 1,
+        "purpose": "data"
+      },
+      {
+        "id": "backup",
+        "mountPath": "/backup",
+        "sizeGb": 2,
+        "purpose": "backup"
+      }
+    ]
+  },
+  "operations": [
+    {
+      "id": "suggestion_create",
+      "title": "Suggest a workflow",
+      "description": "Suggest that repeated work becomes a reviewed workflow. Give a title, the evidence (Kanban issue ids or receipt call ids of the work you repeated) and, if you can, the steps you took and the operations each step used. The owner reviews every suggestion; nothing runs automatically.",
+      "input": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "title",
+          "evidence"
+        ],
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "summary": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 2000
+          },
+          "evidence": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 50,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "ref"
+              ],
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "kanban_issue",
+                    "receipt"
+                  ]
+                },
+                "ref": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                "product": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 40,
+                  "pattern": "^[a-z][a-z0-9-]{0,39}$"
+                },
+                "note": {
+                  "type": "string",
+                  "minLength": 0,
+                  "maxLength": 500
+                }
+              }
+            }
+          },
+          "steps": {
+            "type": "array",
+            "maxItems": 50,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "title"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 40,
+                  "pattern": "^[a-z0-9_-]{1,40}$"
+                },
+                "title": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "instruction": {
+                  "type": "string",
+                  "minLength": 0,
+                  "maxLength": 4000
+                },
+                "ops": {
+                  "type": "array",
+                  "maxItems": 32,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "product",
+                      "operation"
+                    ],
+                    "properties": {
+                      "product": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 40,
+                        "pattern": "^[a-z][a-z0-9-]{0,39}$"
+                      },
+                      "operation": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 40,
+                        "pattern": "^[a-z][a-z0-9_]{0,39}$"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "output": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "title",
+          "summary",
+          "source",
+          "status",
+          "agentId",
+          "createdBy",
+          "evidence",
+          "steps",
+          "note",
+          "decidedAt",
+          "createdAt",
+          "updatedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "agent",
+              "detector"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "approved",
+              "rejected",
+              "archived"
+            ]
+          },
+          "agentId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdBy": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "type",
+              "id",
+              "name"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "agent",
+                  "app",
+                  "person",
+                  "system"
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            }
+          },
+          "evidence": {
+            "type": "array",
+            "maxItems": 500,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "ref",
+                "product",
+                "note",
+                "title"
+              ],
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "kanban_issue",
+                    "receipt"
+                  ]
+                },
+                "ref": {
+                  "type": "string"
+                },
+                "product": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "note": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "title": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              }
+            }
+          },
+          "steps": {
+            "type": "array",
+            "maxItems": 50,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "title",
+                "instruction",
+                "ops"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 40
+                },
+                "title": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "instruction": {
+                  "type": "string"
+                },
+                "ops": {
+                  "type": "array",
+                  "maxItems": 32,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "product",
+                      "operation"
+                    ],
+                    "properties": {
+                      "product": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 40,
+                        "pattern": "^[a-z][a-z0-9-]{0,39}$"
+                      },
+                      "operation": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 40,
+                        "pattern": "^[a-z][a-z0-9_]{0,39}$"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "decidedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          }
+        }
+      },
+      "crud": [
+        "create"
+      ],
+      "effect": "write",
+      "idempotency": "required",
+      "receipt": true,
+      "audience": "agent"
+    },
+    {
+      "id": "suggestions_list",
+      "title": "List my suggestions",
+      "description": "List the suggestions you made (newest first) with their review status.",
+      "input": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "approved",
+              "rejected",
+              "archived"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "output": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "suggestions"
+        ],
+        "properties": {
+          "suggestions": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "title",
+                "source",
+                "status",
+                "agentId",
+                "evidenceCount",
+                "createdAt",
+                "updatedAt"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "source": {
+                  "type": "string",
+                  "enum": [
+                    "agent",
+                    "detector"
+                  ]
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "open",
+                    "approved",
+                    "rejected",
+                    "archived"
+                  ]
+                },
+                "agentId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "evidenceCount": {
+                  "type": "integer"
+                },
+                "createdAt": {
+                  "type": "string"
+                },
+                "updatedAt": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "crud": [
+        "read"
+      ],
+      "effect": "read",
+      "idempotency": "none",
+      "receipt": false,
+      "audience": "agent"
+    },
+    {
+      "id": "suggestion_get",
+      "title": "Get a suggestion",
+      "description": "Read one of your suggestions with its evidence, steps and the owner's decision.",
+      "input": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[a-z]{3}_[0-9A-Za-z]{1,60}$"
+          }
+        }
+      },
+      "output": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "title",
+          "summary",
+          "source",
+          "status",
+          "agentId",
+          "createdBy",
+          "evidence",
+          "steps",
+          "note",
+          "decidedAt",
+          "createdAt",
+          "updatedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "agent",
+              "detector"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "approved",
+              "rejected",
+              "archived"
+            ]
+          },
+          "agentId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdBy": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "type",
+              "id",
+              "name"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "agent",
+                  "app",
+                  "person",
+                  "system"
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            }
+          },
+          "evidence": {
+            "type": "array",
+            "maxItems": 500,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "ref",
+                "product",
+                "note",
+                "title"
+              ],
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "kanban_issue",
+                    "receipt"
+                  ]
+                },
+                "ref": {
+                  "type": "string"
+                },
+                "product": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "note": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "title": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              }
+            }
+          },
+          "steps": {
+            "type": "array",
+            "maxItems": 50,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "title",
+                "instruction",
+                "ops"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 40
+                },
+                "title": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "instruction": {
+                  "type": "string"
+                },
+                "ops": {
+                  "type": "array",
+                  "maxItems": 32,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "product",
+                      "operation"
+                    ],
+                    "properties": {
+                      "product": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 40,
+                        "pattern": "^[a-z][a-z0-9-]{0,39}$"
+                      },
+                      "operation": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 40,
+                        "pattern": "^[a-z][a-z0-9_]{0,39}$"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "decidedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          }
+        }
+      },
+      "crud": [
+        "read"
+      ],
+      "effect": "read",
+      "idempotency": "none",
+      "receipt": false,
+      "audience": "agent"
+    },
+    {
+      "id": "workflow_get",
+      "title": "Get a workflow",
+      "description": "Read a promoted workflow: instruction, trigger, reviewed steps and the operations you may call. A Bound agent reads its workflow here before it works. Without version: the active version.",
+      "input": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[a-z]{3}_[0-9A-Za-z]{1,60}$"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      },
+      "output": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "workflowId",
+          "version",
+          "title",
+          "summary",
+          "instruction",
+          "trigger",
+          "steps",
+          "allowed",
+          "draftId",
+          "draftRevision",
+          "promotedAt",
+          "notice"
+        ],
+        "properties": {
+          "workflowId": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer"
+          },
+          "title": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "instruction": {
+            "type": "string"
+          },
+          "trigger": {
+            "type": "string"
+          },
+          "steps": {
+            "type": "array",
+            "maxItems": 50,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "title",
+                "instruction",
+                "ops"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 40
+                },
+                "title": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "instruction": {
+                  "type": "string"
+                },
+                "ops": {
+                  "type": "array",
+                  "maxItems": 32,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "product",
+                      "operation"
+                    ],
+                    "properties": {
+                      "product": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 40,
+                        "pattern": "^[a-z][a-z0-9-]{0,39}$"
+                      },
+                      "operation": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 40,
+                        "pattern": "^[a-z][a-z0-9_]{0,39}$"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "allowed": {
+            "type": "array",
+            "maxItems": 32,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "product",
+                "operations",
+                "crud"
+              ],
+              "properties": {
+                "product": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 40,
+                  "pattern": "^[a-z][a-z0-9-]{0,39}$"
+                },
+                "operations": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 64,
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 40,
+                    "pattern": "^[a-z][a-z0-9_]{0,39}$"
+                  }
+                },
+                "crud": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 4,
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "create",
+                      "read",
+                      "update",
+                      "delete"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "draftId": {
+            "type": "string"
+          },
+          "draftRevision": {
+            "type": "integer"
+          },
+          "promotedAt": {
+            "type": "string"
+          },
+          "notice": {
+            "type": "string"
+          }
+        }
+      },
+      "crud": [
+        "read"
+      ],
+      "effect": "read",
+      "idempotency": "none",
+      "receipt": false,
+      "audience": "agent"
+    },
+    {
+      "id": "review_suggestions",
+      "title": "Suggestions to review",
+      "description": "All suggestions in this workspace, newest first.",
+      "input": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "approved",
+              "rejected",
+              "archived"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200
+          }
+        }
+      },
+      "output": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "suggestions"
+        ],
+        "properties": {
+          "suggestions": {
+            "type": "array",
+            "maxItems": 200,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "title",
+                "source",
+                "status",
+                "agentId",
+                "evidenceCount",
+                "createdAt",
+                "updatedAt"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "source": {
+                  "type": "string",
+                  "enum": [
+                    "agent",
+                    "detector"
+                  ]
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "open",
+                    "approved",
+                    "rejected",
+                    "archived"
+                  ]
+                },
+                "agentId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "evidenceCount": {
+                  "type": "integer"
+                },
+                "createdAt": {
+                  "type": "string"
+                },
+                "updatedAt": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "crud": [
+        "read"
+      ],
+      "effect": "read",
+      "idempotency": "none",
+      "receipt": false,
+      "audience": "person"
+    },
+    {
+      "id": "review_suggestion",
+      "title": "Suggestion detail",
+      "description": "One suggestion with its history and the drafts made from it.",
+      "input": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[a-z]{3}_[0-9A-Za-z]{1,60}$"
+          }
+        }
+      },
+      "output": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "suggestion",
+          "events",
+          "drafts"
+        ],
+        "properties": {
+          "suggestion": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "title",
+              "summary",
+              "source",
+              "status",
+              "agentId",
+              "createdBy",
+              "evidence",
+              "steps",
+              "note",
+              "decidedAt",
+              "createdAt",
+              "updatedAt"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "summary": {
+                "type": "string"
+              },
+              "source": {
+                "type": "string",
+                "enum": [
+                  "agent",
+                  "detector"
+                ]
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "open",
+                  "approved",
+                  "rejected",
+                  "archived"
+                ]
+              },
+              "agentId": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "createdBy": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "type",
+                  "id",
+                  "name"
+                ],
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "agent",
+                      "app",
+                      "person",
+                      "system"
+                    ]
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  }
+                }
+              },
+              "evidence": {
+                "type": "array",
+                "maxItems": 500,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "kind",
+                    "ref",
+                    "product",
+                    "note",
+                    "title"
+                  ],
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "kanban_issue",
+                        "receipt"
+                      ]
+                    },
+                    "ref": {
+                      "type": "string"
+                    },
+                    "product": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "note": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "title": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  }
+                }
+              },
+              "steps": {
+                "type": "array",
+                "maxItems": 50,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "id",
+                    "title",
+                    "instruction",
+                    "ops"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 40
+                    },
+                    "title": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "instruction": {
+                      "type": "string"
+                    },
+                    "ops": {
+                      "type": "array",
+                      "maxItems": 32,
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "product",
+                          "operation"
+                        ],
+                        "properties": {
+                          "product": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 40,
+                            "pattern": "^[a-z][a-z0-9-]{0,39}$"
+                          },
+                          "operation": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 40,
+                            "pattern": "^[a-z][a-z0-9_]{0,39}$"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "note": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "decidedAt": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "createdAt": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "string"
+              }
+            }
+          },
+          "events": {
+            "type": "array",
+            "maxItems": 500,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "type",
+                "actor",
+                "note",
+                "at"
+              ],
+              "properties": {
+                "type": {
+                  "type": "string"
+                },
+                "actor": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "type",
+                    "id",
+                    "name"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "enum": [
+                        "agent",
+                        "app",
+                        "person",
+                        "system"
+                      ]
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "note": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "at": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "drafts": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "title",
+                "state",
+                "revision",
+                "workflowId",
+                "suggestionId",
+                "updatedAt"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "state": {
+                  "type": "string",
+                  "enum": [
+                    "open",
+                    "promoted"
+                  ]
+                },
+                "revision": {
+                  "type": "integer"
+                },
+                "workflowId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "suggestionId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "updatedAt": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "crud": [
+        "read"
+      ],
+      "effect": "read",
+      "idempotency": "none",
+      "receipt": false,
+      "audience": "person"
+    },
+    {
+      "id": "suggestion_decide",
+      "title": "Decide a suggestion",
+      "description": "Approve, reject or archive a suggestion.",
+      "input": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "decision"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[a-z]{3}_[0-9A-Za-z]{1,60}$"
+          },
+          "decision": {
+            "type": "string",
+            "enum": [
+              "approve",
+              "reject",
+              "archive"
+            ]
+          },
+          "note": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 1000
+          }
+        }
+      },
+      "output": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "title",
+          "summary",
+          "source",
+          "status",
+          "agentId",
+          "createdBy",
+          "evidence",
+          "steps",
+          "note",
+          "decidedAt",
+          "createdAt",
+          "updatedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "agent",
+              "detector"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "approved",
+              "rejected",
+              "archived"
+            ]
+          },
+          "agentId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdBy": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "type",
+              "id",
+              "name"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "agent",
+                  "app",
+                  "person",
+                  "system"
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            }
+          },
+          "evidence": {
+            "type": "array",
+            "maxItems": 500,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "ref",
+                "product",
+                "note",
+                "title"
+              ],
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "kanban_issue",
+                    "receipt"
+                  ]
+                },
+                "ref": {
+                  "type": "string"
+                },
+                "product": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "note": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "title": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              }
+            }
+          },
+          "steps": {
+            "type": "array",
+            "maxItems": 50,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "title",
+                "instruction",
+                "ops"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 40
+                },
+                "title": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "instruction": {
+                  "type": "string"
+                },
+                "ops": {
+                  "type": "array",
+                  "maxItems": 32,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "product",
+                      "operation"
+                    ],
+                    "properties": {
+                      "product": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 40,
+                        "pattern": "^[a-z][a-z0-9-]{0,39}$"
+                      },
+                      "operation": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 40,
+                        "pattern": "^[a-z][a-z0-9_]{0,39}$"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "decidedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          }
+        }
+      },
+      "crud": [
+        "update"
+      ],
+      "effect": "write",
+      "idempotency": "supported",
+      "receipt": true,
+      "audience": "person"
+    },
+    {
+      "id": "detector_scan",
+      "title": "Scan Kanban for repeated work",
+      "description": "Read done Kanban issues and suggest a workflow for work one agent repeated at least minRepeats times.",
+      "input": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "minRepeats": {
+            "type": "integer",
+            "minimum": 2,
+            "maximum": 20
+          }
+        }
+      },
+      "output": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kanban",
+          "message",
+          "issuesSeen",
+          "created",
+          "updated"
+        ],
+        "properties": {
+          "kanban": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "unavailable"
+            ]
+          },
+          "message": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "issuesSeen": {
+            "type": "integer"
+          },
+          "created": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "title",
+                "source",
+                "status",
+                "agentId",
+                "evidenceCount",
+                "createdAt",
+                "updatedAt"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "source": {
+                  "type": "string",
+                  "enum": [
+                    "agent",
+                    "detector"
+                  ]
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "open",
+                    "approved",
+                    "rejected",
+                    "archived"
+                  ]
+                },
+                "agentId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "evidenceCount": {
+                  "type": "integer"
+                },
+                "createdAt": {
+                  "type": "string"
+                },
+                "updatedAt": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "updated": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "title",
+                "source",
+                "status",
+                "agentId",
+                "evidenceCount",
+                "createdAt",
+                "updatedAt"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "source": {
+                  "type": "string",
+                  "enum": [
+                    "agent",
+                    "detector"
+                  ]
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "open",
+                    "approved",
+                    "rejected",
+                    "archived"
+                  ]
+                },
+                "agentId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "evidenceCount": {
+                  "type": "integer"
+                },
+                "createdAt": {
+                  "type": "string"
+                },
+                "updatedAt": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "crud": [
+        "create",
+        "update"
+      ],
+      "effect": "write",
+      "idempotency": "required",
+      "receipt": true,
+      "audience": "person"
+    },
+    {
+      "id": "templates_list",
+      "title": "Workflow templates",
+      "description": "Seed workflow templates the owner can start a draft from.",
+      "input": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "output": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "templates"
+        ],
+        "properties": {
+          "templates": {
+            "type": "array",
+            "maxItems": 50,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "title",
+                "summary",
+                "trigger",
+                "instruction",
+                "steps",
+                "allowed"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "summary": {
+                  "type": "string"
+                },
+                "trigger": {
+                  "type": "string"
+                },
+                "instruction": {
+                  "type": "string"
+                },
+                "steps": {
+                  "type": "array",
+                  "maxItems": 50,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "id",
+                      "title",
+                      "instruction",
+                      "ops"
+                    ],
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 40
+                      },
+                      "title": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200
+                      },
+                      "instruction": {
+                        "type": "string"
+                      },
+                      "ops": {
+                        "type": "array",
+                        "maxItems": 32,
+                        "items": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "product",
+                            "operation"
+                          ],
+                          "properties": {
+                            "product": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 40,
+                              "pattern": "^[a-z][a-z0-9-]{0,39}$"
+                            },
+                            "operation": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 40,
+                              "pattern": "^[a-z][a-z0-9_]{0,39}$"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "allowed": {
+                  "type": "array",
+                  "maxItems": 32,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "product",
+                      "operations",
+                      "crud"
+                    ],
+                    "properties": {
+                      "product": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 40,
+                        "pattern": "^[a-z][a-z0-9-]{0,39}$"
+                      },
+                      "operations": {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 64,
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 40,
+                          "pattern": "^[a-z][a-z0-9_]{0,39}$"
+                        }
+                      },
+                      "crud": {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 4,
+                        "items": {
+                          "type": "string",
+                          "enum": [
+                            "create",
+                            "read",
+                            "update",
+                            "delete"
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "crud": [
+        "read"
+      ],
+      "effect": "read",
+      "idempotency": "none",
+      "receipt": false,
+      "audience": "person"
+    },
+    {
+      "id": "draft_create",
+      "title": "Create a draft",
+      "description": "Create a workflow draft from an approved suggestion, from a template, or empty.",
+      "input": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "suggestionId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[a-z]{3}_[0-9A-Za-z]{1,60}$"
+          },
+          "templateId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        }
+      },
+      "output": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "suggestionId",
+          "templateId",
+          "workflowId",
+          "title",
+          "summary",
+          "instruction",
+          "trigger",
+          "steps",
+          "allowed",
+          "revision",
+          "state",
+          "promotedVersion",
+          "createdAt",
+          "updatedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "suggestionId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "templateId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "workflowId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "instruction": {
+            "type": "string"
+          },
+          "trigger": {
+            "type": "string"
+          },
+          "steps": {
+            "type": "array",
+            "maxItems": 50,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "title",
+                "instruction",
+                "ops"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 40
+                },
+                "title": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "instruction": {
+                  "type": "string"
+                },
+                "ops": {
+                  "type": "array",
+                  "maxItems": 32,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "product",
+                      "operation"
+                    ],
+                    "properties": {
+                      "product": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 40,
+                        "pattern": "^[a-z][a-z0-9-]{0,39}$"
+                      },
+                      "operation": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 40,
+                        "pattern": "^[a-z][a-z0-9_]{0,39}$"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "allowed": {
+            "type": "array",
+            "maxItems": 32,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "product",
+                "operations",
+                "crud"
+              ],
+              "properties": {
+                "product": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 40,
+                  "pattern": "^[a-z][a-z0-9-]{0,39}$"
+                },
+                "operations": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 64,
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 40,
+                    "pattern": "^[a-z][a-z0-9_]{0,39}$"
+                  }
+                },
+                "crud": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 4,
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "create",
+                      "read",
+                      "update",
+                      "delete"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "open",
+              "promoted"
+            ]
+          },
+          "promotedVersion": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          }
+        }
+      },
+      "crud": [
+        "create"
+      ],
+      "effect": "write",
+      "idempotency": "required",
+      "receipt": true,
+      "audience": "person"
+    },
+    {
+      "id": "drafts_list",
+      "title": "Drafts",
+      "description": "All workflow drafts, newest first.",
+      "input": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "output": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "drafts"
+        ],
+        "properties": {
+          "drafts": {
+            "type": "array",
+            "maxItems": 500,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "title",
+                "state",
+                "revision",
+                "workflowId",
+                "suggestionId",
+                "updatedAt"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "state": {
+                  "type": "string",
+                  "enum": [
+                    "open",
+                    "promoted"
+                  ]
+                },
+                "revision": {
+                  "type": "integer"
+                },
+                "workflowId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "suggestionId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "updatedAt": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "crud": [
+        "read"
+      ],
+      "effect": "read",
+      "idempotency": "none",
+      "receipt": false,
+      "audience": "person"
+    },
+    {
+      "id": "draft_get",
+      "title": "Draft detail",
+      "description": "One workflow draft.",
+      "input": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[a-z]{3}_[0-9A-Za-z]{1,60}$"
+          }
+        }
+      },
+      "output": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "suggestionId",
+          "templateId",
+          "workflowId",
+          "title",
+          "summary",
+          "instruction",
+          "trigger",
+          "steps",
+          "allowed",
+          "revision",
+          "state",
+          "promotedVersion",
+          "createdAt",
+          "updatedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "suggestionId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "templateId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "workflowId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "instruction": {
+            "type": "string"
+          },
+          "trigger": {
+            "type": "string"
+          },
+          "steps": {
+            "type": "array",
+            "maxItems": 50,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "title",
+                "instruction",
+                "ops"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 40
+                },
+                "title": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "instruction": {
+                  "type": "string"
+                },
+                "ops": {
+                  "type": "array",
+                  "maxItems": 32,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "product",
+                      "operation"
+                    ],
+                    "properties": {
+                      "product": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 40,
+                        "pattern": "^[a-z][a-z0-9-]{0,39}$"
+                      },
+                      "operation": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 40,
+                        "pattern": "^[a-z][a-z0-9_]{0,39}$"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "allowed": {
+            "type": "array",
+            "maxItems": 32,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "product",
+                "operations",
+                "crud"
+              ],
+              "properties": {
+                "product": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 40,
+                  "pattern": "^[a-z][a-z0-9-]{0,39}$"
+                },
+                "operations": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 64,
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 40,
+                    "pattern": "^[a-z][a-z0-9_]{0,39}$"
+                  }
+                },
+                "crud": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 4,
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "create",
+                      "read",
+                      "update",
+                      "delete"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "open",
+              "promoted"
+            ]
+          },
+          "promotedVersion": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          }
+        }
+      },
+      "crud": [
+        "read"
+      ],
+      "effect": "read",
+      "idempotency": "none",
+      "receipt": false,
+      "audience": "person"
+    },
+    {
+      "id": "draft_update",
+      "title": "Edit a draft",
+      "description": "Change a draft's text, steps or allowed operations. Send the revision you edited; a stale revision is refused.",
+      "input": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "revision"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[a-z]{3}_[0-9A-Za-z]{1,60}$"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "summary": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 2000
+          },
+          "instruction": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 8000
+          },
+          "trigger": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 500
+          },
+          "steps": {
+            "type": "array",
+            "maxItems": 50,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "title"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 40,
+                  "pattern": "^[a-z0-9_-]{1,40}$"
+                },
+                "title": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "instruction": {
+                  "type": "string",
+                  "minLength": 0,
+                  "maxLength": 4000
+                },
+                "ops": {
+                  "type": "array",
+                  "maxItems": 32,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "product",
+                      "operation"
+                    ],
+                    "properties": {
+                      "product": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 40,
+                        "pattern": "^[a-z][a-z0-9-]{0,39}$"
+                      },
+                      "operation": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 40,
+                        "pattern": "^[a-z][a-z0-9_]{0,39}$"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "allowed": {
+            "type": "array",
+            "maxItems": 32,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "product",
+                "operations",
+                "crud"
+              ],
+              "properties": {
+                "product": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 40,
+                  "pattern": "^[a-z][a-z0-9-]{0,39}$"
+                },
+                "operations": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 64,
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 40,
+                    "pattern": "^[a-z][a-z0-9_]{0,39}$"
+                  }
+                },
+                "crud": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 4,
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "create",
+                      "read",
+                      "update",
+                      "delete"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "output": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "suggestionId",
+          "templateId",
+          "workflowId",
+          "title",
+          "summary",
+          "instruction",
+          "trigger",
+          "steps",
+          "allowed",
+          "revision",
+          "state",
+          "promotedVersion",
+          "createdAt",
+          "updatedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "suggestionId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "templateId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "workflowId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "instruction": {
+            "type": "string"
+          },
+          "trigger": {
+            "type": "string"
+          },
+          "steps": {
+            "type": "array",
+            "maxItems": 50,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "title",
+                "instruction",
+                "ops"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 40
+                },
+                "title": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "instruction": {
+                  "type": "string"
+                },
+                "ops": {
+                  "type": "array",
+                  "maxItems": 32,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "product",
+                      "operation"
+                    ],
+                    "properties": {
+                      "product": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 40,
+                        "pattern": "^[a-z][a-z0-9-]{0,39}$"
+                      },
+                      "operation": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 40,
+                        "pattern": "^[a-z][a-z0-9_]{0,39}$"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "allowed": {
+            "type": "array",
+            "maxItems": 32,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "product",
+                "operations",
+                "crud"
+              ],
+              "properties": {
+                "product": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 40,
+                  "pattern": "^[a-z][a-z0-9-]{0,39}$"
+                },
+                "operations": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 64,
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 40,
+                    "pattern": "^[a-z][a-z0-9_]{0,39}$"
+                  }
+                },
+                "crud": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 4,
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "create",
+                      "read",
+                      "update",
+                      "delete"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "open",
+              "promoted"
+            ]
+          },
+          "promotedVersion": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          }
+        }
+      },
+      "crud": [
+        "update"
+      ],
+      "effect": "write",
+      "idempotency": "supported",
+      "receipt": true,
+      "audience": "person"
+    },
+    {
+      "id": "workflow_promote",
+      "title": "Promote a draft",
+      "description": "Make the reviewed draft a permanent workflow version (version 1, or the next version of its workflow).",
+      "input": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "draftId",
+          "revision"
+        ],
+        "properties": {
+          "draftId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[a-z]{3}_[0-9A-Za-z]{1,60}$"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      },
+      "output": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "workflow",
+          "version"
+        ],
+        "properties": {
+          "workflow": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "title",
+              "summary",
+              "activeVersion",
+              "draftId",
+              "createdAt",
+              "updatedAt"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "summary": {
+                "type": "string"
+              },
+              "activeVersion": {
+                "type": "integer"
+              },
+              "draftId": {
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "string"
+              }
+            }
+          },
+          "version": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "workflowId",
+              "version",
+              "title",
+              "summary",
+              "instruction",
+              "trigger",
+              "steps",
+              "allowed",
+              "draftId",
+              "draftRevision",
+              "promotedAt"
+            ],
+            "properties": {
+              "workflowId": {
+                "type": "string"
+              },
+              "version": {
+                "type": "integer"
+              },
+              "title": {
+                "type": "string"
+              },
+              "summary": {
+                "type": "string"
+              },
+              "instruction": {
+                "type": "string"
+              },
+              "trigger": {
+                "type": "string"
+              },
+              "steps": {
+                "type": "array",
+                "maxItems": 50,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "id",
+                    "title",
+                    "instruction",
+                    "ops"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 40
+                    },
+                    "title": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "instruction": {
+                      "type": "string"
+                    },
+                    "ops": {
+                      "type": "array",
+                      "maxItems": 32,
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "product",
+                          "operation"
+                        ],
+                        "properties": {
+                          "product": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 40,
+                            "pattern": "^[a-z][a-z0-9-]{0,39}$"
+                          },
+                          "operation": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 40,
+                            "pattern": "^[a-z][a-z0-9_]{0,39}$"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "allowed": {
+                "type": "array",
+                "maxItems": 32,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "product",
+                    "operations",
+                    "crud"
+                  ],
+                  "properties": {
+                    "product": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 40,
+                      "pattern": "^[a-z][a-z0-9-]{0,39}$"
+                    },
+                    "operations": {
+                      "type": "array",
+                      "minItems": 1,
+                      "maxItems": 64,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 40,
+                        "pattern": "^[a-z][a-z0-9_]{0,39}$"
+                      }
+                    },
+                    "crud": {
+                      "type": "array",
+                      "minItems": 1,
+                      "maxItems": 4,
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "create",
+                          "read",
+                          "update",
+                          "delete"
+                        ]
+                      }
+                    }
+                  }
+                }
+              },
+              "draftId": {
+                "type": "string"
+              },
+              "draftRevision": {
+                "type": "integer"
+              },
+              "promotedAt": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "crud": [
+        "create"
+      ],
+      "effect": "write",
+      "idempotency": "required",
+      "receipt": true,
+      "audience": "person"
+    },
+    {
+      "id": "workflows_list",
+      "title": "Workflows",
+      "description": "All permanent workflows.",
+      "input": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "output": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "workflows"
+        ],
+        "properties": {
+          "workflows": {
+            "type": "array",
+            "maxItems": 500,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "title",
+                "summary",
+                "activeVersion",
+                "draftId",
+                "createdAt",
+                "updatedAt"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "summary": {
+                  "type": "string"
+                },
+                "activeVersion": {
+                  "type": "integer"
+                },
+                "draftId": {
+                  "type": "string"
+                },
+                "createdAt": {
+                  "type": "string"
+                },
+                "updatedAt": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "crud": [
+        "read"
+      ],
+      "effect": "read",
+      "idempotency": "none",
+      "receipt": false,
+      "audience": "person"
+    },
+    {
+      "id": "workflow_versions",
+      "title": "Workflow versions",
+      "description": "Every version of one workflow, oldest first.",
+      "input": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "workflowId"
+        ],
+        "properties": {
+          "workflowId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[a-z]{3}_[0-9A-Za-z]{1,60}$"
+          }
+        }
+      },
+      "output": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "workflow",
+          "versions"
+        ],
+        "properties": {
+          "workflow": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "title",
+              "summary",
+              "activeVersion",
+              "draftId",
+              "createdAt",
+              "updatedAt"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "summary": {
+                "type": "string"
+              },
+              "activeVersion": {
+                "type": "integer"
+              },
+              "draftId": {
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "string"
+              }
+            }
+          },
+          "versions": {
+            "type": "array",
+            "maxItems": 1000,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "workflowId",
+                "version",
+                "title",
+                "summary",
+                "instruction",
+                "trigger",
+                "steps",
+                "allowed",
+                "draftId",
+                "draftRevision",
+                "promotedAt"
+              ],
+              "properties": {
+                "workflowId": {
+                  "type": "string"
+                },
+                "version": {
+                  "type": "integer"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "summary": {
+                  "type": "string"
+                },
+                "instruction": {
+                  "type": "string"
+                },
+                "trigger": {
+                  "type": "string"
+                },
+                "steps": {
+                  "type": "array",
+                  "maxItems": 50,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "id",
+                      "title",
+                      "instruction",
+                      "ops"
+                    ],
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 40
+                      },
+                      "title": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200
+                      },
+                      "instruction": {
+                        "type": "string"
+                      },
+                      "ops": {
+                        "type": "array",
+                        "maxItems": 32,
+                        "items": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "product",
+                            "operation"
+                          ],
+                          "properties": {
+                            "product": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 40,
+                              "pattern": "^[a-z][a-z0-9-]{0,39}$"
+                            },
+                            "operation": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 40,
+                              "pattern": "^[a-z][a-z0-9_]{0,39}$"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "allowed": {
+                  "type": "array",
+                  "maxItems": 32,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "product",
+                      "operations",
+                      "crud"
+                    ],
+                    "properties": {
+                      "product": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 40,
+                        "pattern": "^[a-z][a-z0-9-]{0,39}$"
+                      },
+                      "operations": {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 64,
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 40,
+                          "pattern": "^[a-z][a-z0-9_]{0,39}$"
+                        }
+                      },
+                      "crud": {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 4,
+                        "items": {
+                          "type": "string",
+                          "enum": [
+                            "create",
+                            "read",
+                            "update",
+                            "delete"
+                          ]
+                        }
+                      }
+                    }
+                  }
+                },
+                "draftId": {
+                  "type": "string"
+                },
+                "draftRevision": {
+                  "type": "integer"
+                },
+                "promotedAt": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "crud": [
+        "read"
+      ],
+      "effect": "read",
+      "idempotency": "none",
+      "receipt": false,
+      "audience": "person"
+    },
+    {
+      "id": "workflow_diff",
+      "title": "Compare versions",
+      "description": "What changed between two versions of a workflow: text, steps and allowed operations.",
+      "input": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "workflowId",
+          "from",
+          "to"
+        ],
+        "properties": {
+          "workflowId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[a-z]{3}_[0-9A-Za-z]{1,60}$"
+          },
+          "from": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "to": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      },
+      "output": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "workflowId",
+          "from",
+          "to",
+          "fields",
+          "steps",
+          "operations",
+          "widensAccess",
+          "notice"
+        ],
+        "properties": {
+          "workflowId": {
+            "type": "string"
+          },
+          "from": {
+            "type": "integer"
+          },
+          "to": {
+            "type": "integer"
+          },
+          "fields": {
+            "type": "array",
+            "maxItems": 8,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "field",
+                "from",
+                "to"
+              ],
+              "properties": {
+                "field": {
+                  "type": "string"
+                },
+                "from": {
+                  "type": "string"
+                },
+                "to": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "steps": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "added",
+              "removed",
+              "changed"
+            ],
+            "properties": {
+              "added": {
+                "type": "array",
+                "maxItems": 50,
+                "items": {
+                  "type": "string"
+                }
+              },
+              "removed": {
+                "type": "array",
+                "maxItems": 50,
+                "items": {
+                  "type": "string"
+                }
+              },
+              "changed": {
+                "type": "array",
+                "maxItems": 50,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "id",
+                    "title",
+                    "fields"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "fields": {
+                      "type": "array",
+                      "maxItems": 8,
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "operations": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "added",
+              "removed"
+            ],
+            "properties": {
+              "added": {
+                "type": "array",
+                "maxItems": 2048,
+                "items": {
+                  "type": "string"
+                }
+              },
+              "removed": {
+                "type": "array",
+                "maxItems": 2048,
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "widensAccess": {
+            "type": "boolean"
+          },
+          "notice": {
+            "type": "string"
+          }
+        }
+      },
+      "crud": [
+        "read"
+      ],
+      "effect": "read",
+      "idempotency": "none",
+      "receipt": false,
+      "audience": "person"
+    },
+    {
+      "id": "recipe_export",
+      "title": "Export a Bound-agent recipe",
+      "description": "A tealbrick.recipe/1 the owner imports and applies in Portal: create the agent, set it Bound with the workflow's allowed operations, connect it to each app.",
+      "input": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "workflowId"
+        ],
+        "properties": {
+          "workflowId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[a-z]{3}_[0-9A-Za-z]{1,60}$"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "agentName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "harnessOptionId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
+          }
+        }
+      },
+      "output": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "recipe",
+          "notice"
+        ],
+        "properties": {
+          "recipe": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "format",
+              "title",
+              "description",
+              "steps"
+            ],
+            "properties": {
+              "format": {
+                "type": "string",
+                "const": "tealbrick.recipe/1"
+              },
+              "title": {
+                "type": "string"
+              },
+              "description": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "steps": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 40,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "opId",
+                    "input"
+                  ],
+                  "properties": {
+                    "opId": {
+                      "type": "string",
+                      "enum": [
+                        "agents.create",
+                        "agents.policy_set",
+                        "edges.create"
+                      ]
+                    },
+                    "input": {
+                      "type": "object"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "notice": {
+            "type": "string"
+          }
+        }
+      },
+      "crud": [
+        "read"
+      ],
+      "effect": "read",
+      "idempotency": "none",
+      "receipt": false,
+      "audience": "person"
+    }
+  ],
+  "companions": [
+    {
+      "product": "kanban",
+      "operations": [
+        "issues_list"
+      ],
+      "crud": [
+        "read"
+      ],
+      "purpose": "Reads done Kanban issues to spot work one agent repeated, and suggests it as a workflow."
+    }
+  ],
+  "needsAgentDirectory": true,
+  "skills": [
+    {
+      "id": "use-evolution",
+      "title": "How to use Evolution",
+      "file": "skills/use-evolution/SKILL.md"
+    }
+  ],
+  "backups": {
+    "schedule": "30 2 * * *",
+    "retain": 7
+  },
+  "ui": {
+    "launchPath": "/",
+    "configurePath": "/configure"
+  }
+}
