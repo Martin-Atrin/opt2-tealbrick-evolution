@@ -143,7 +143,7 @@ function Editor({ id, onSaved, onPromoted }: { id: string; onSaved: () => Promis
       <Field label="Instruction for the Bound agent" hint="What the agent does on each run. It reads this with workflow_get.">
         <textarea className="tb-textarea" rows={4} value={form.instruction} onChange={(e) => set({ instruction: e.target.value })} maxLength={8000} />
       </Field>
-      <Field label="Trigger" hint="When it should run, in words. Schedules come in a later version; nothing runs automatically yet.">
+      <Field label="Trigger" hint="When it should run, in words. After promotion, set the real schedule on the Schedules page.">
         <TextInput value={form.trigger} onChange={(e) => set({ trigger: e.target.value })} maxLength={500} />
       </Field>
 

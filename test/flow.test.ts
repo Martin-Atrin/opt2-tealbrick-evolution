@@ -127,7 +127,7 @@ test("owner review: decide, draft (needs approval), edit with revisions, promote
   const policy = exported.recipe.steps[1]?.input as { mode: string; workflow: { product: string; operations: string[] }[] };
   assert.equal(policy.mode, "bound");
   assert.deepEqual(policy.workflow, [
-    { product: "evolution", operations: ["workflow_get"] },
+    { product: "evolution", operations: ["routine_claim", "routine_report", "routines_due", "workflow_get"] },
     { product: "kanban", operations: ["issue_create", "issues_list"] },
     { product: "knowledge", operations: ["remember"] },
   ]);

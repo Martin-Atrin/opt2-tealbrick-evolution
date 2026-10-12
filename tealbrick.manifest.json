@@ -3,9 +3,9 @@
   "schema": "tealbrick.miniapp/2",
   "id": "evolution",
   "name": "Evolution",
-  "summary": "Evolution turns work your agents repeat into reviewed, versioned workflows that a Bound agent may run.",
-  "description": "Agents suggest a workflow when they repeat work, with evidence. Evolution also spots repeated done issues in Kanban. You review each suggestion, edit a draft (steps, allowed operations, trigger), promote it to a versioned workflow and export a recipe that creates a Bound agent in Portal. A Bound agent may call only the allowed operations; it is not forced to follow the steps.",
-  "version": "0.1.0",
+  "summary": "Evolution turns work your agents repeat into reviewed, versioned workflows that a Bound agent runs on a schedule.",
+  "description": "Agents suggest a workflow when they repeat work, with evidence. Evolution also spots repeated done issues in Kanban. You review each suggestion, edit a draft (steps, allowed operations, trigger), promote it to a versioned workflow, export a recipe that creates a Bound agent in Portal, and schedule it. The Bound agent's own runner claims each due run at most once; every run is a Kanban issue assigned to that agent. A Bound agent may call only the allowed operations; it is not forced to follow the steps.",
+  "version": "0.2.0",
   "sdkMajor": 1,
   "publisher": {
     "name": "Teal Brick opt2"
@@ -881,6 +881,433 @@
       "effect": "read",
       "idempotency": "none",
       "receipt": false,
+      "audience": "agent"
+    },
+    {
+      "id": "routines_due",
+      "title": "Due workflow runs",
+      "description": "For a Bound agent: the scheduled runs of your workflows that are due now. Reading changes nothing; claim a run with routine_claim before you start it. Your `tealbrick agent serve` routines mode calls this for you.",
+      "input": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "output": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "jobs"
+        ],
+        "properties": {
+          "jobs": {
+            "type": "array",
+            "maxItems": 50,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "occurrence",
+                "automationId",
+                "workflowId",
+                "version",
+                "dueAt",
+                "title"
+              ],
+              "properties": {
+                "occurrence": {
+                  "type": "string"
+                },
+                "automationId": {
+                  "type": "string"
+                },
+                "workflowId": {
+                  "type": "string"
+                },
+                "version": {
+                  "type": "integer"
+                },
+                "dueAt": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "crud": [
+        "read"
+      ],
+      "effect": "read",
+      "idempotency": "none",
+      "receipt": false,
+      "audience": "agent"
+    },
+    {
+      "id": "routine_claim",
+      "title": "Claim a due run",
+      "description": "Claim one due run by its occurrence. At most one claim per occurrence ever succeeds; a run that was claimed, missed or is not due answers claimed false with a reason. The answer carries the reviewed workflow (instruction, steps, allowed operations).",
+      "input": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "occurrence"
+        ],
+        "properties": {
+          "occurrence": {
+            "type": "string",
+            "minLength": 64,
+            "maxLength": 64,
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        }
+      },
+      "output": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "claimed",
+          "reason",
+          "job"
+        ],
+        "properties": {
+          "claimed": {
+            "type": "boolean"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "already_claimed",
+                  "missed",
+                  "not_due",
+                  "paused",
+                  "not_bound",
+                  "version_missing",
+                  "policy_stale"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "job": {
+            "anyOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "occurrence",
+                  "automationId",
+                  "workflowId",
+                  "version",
+                  "dueAt",
+                  "title",
+                  "instruction",
+                  "trigger",
+                  "steps",
+                  "allowed",
+                  "deadline",
+                  "kanbanIssueId",
+                  "kanbanTemplate"
+                ],
+                "properties": {
+                  "occurrence": {
+                    "type": "string"
+                  },
+                  "automationId": {
+                    "type": "string"
+                  },
+                  "workflowId": {
+                    "type": "string"
+                  },
+                  "version": {
+                    "type": "integer"
+                  },
+                  "dueAt": {
+                    "type": "string"
+                  },
+                  "title": {
+                    "type": "string"
+                  },
+                  "instruction": {
+                    "type": "string"
+                  },
+                  "trigger": {
+                    "type": "string"
+                  },
+                  "steps": {
+                    "type": "array",
+                    "maxItems": 50,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "id",
+                        "title",
+                        "instruction",
+                        "ops"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 40
+                        },
+                        "title": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                        },
+                        "instruction": {
+                          "type": "string"
+                        },
+                        "ops": {
+                          "type": "array",
+                          "maxItems": 32,
+                          "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                              "product",
+                              "operation"
+                            ],
+                            "properties": {
+                              "product": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 40,
+                                "pattern": "^[a-z][a-z0-9-]{0,39}$"
+                              },
+                              "operation": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 40,
+                                "pattern": "^[a-z][a-z0-9_]{0,39}$"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "allowed": {
+                    "type": "array",
+                    "maxItems": 32,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "product",
+                        "operations",
+                        "crud"
+                      ],
+                      "properties": {
+                        "product": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 40,
+                          "pattern": "^[a-z][a-z0-9-]{0,39}$"
+                        },
+                        "operations": {
+                          "type": "array",
+                          "minItems": 1,
+                          "maxItems": 64,
+                          "items": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 40,
+                            "pattern": "^[a-z][a-z0-9_]{0,39}$"
+                          }
+                        },
+                        "crud": {
+                          "type": "array",
+                          "minItems": 1,
+                          "maxItems": 4,
+                          "items": {
+                            "type": "string",
+                            "enum": [
+                              "create",
+                              "read",
+                              "update",
+                              "delete"
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "deadline": {
+                    "type": "string"
+                  },
+                  "kanbanIssueId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "kanbanTemplate": {
+                    "type": "string"
+                  }
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "crud": [
+        "update"
+      ],
+      "effect": "write",
+      "idempotency": "supported",
+      "receipt": true,
+      "audience": "agent"
+    },
+    {
+      "id": "routine_report",
+      "title": "Report a run",
+      "description": "Report the state of a run you claimed: dispatched (the turn started), then completed, failed or uncertain, with a short summary. Repeating the same report changes nothing.",
+      "input": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "occurrence",
+          "status"
+        ],
+        "properties": {
+          "occurrence": {
+            "type": "string",
+            "minLength": 64,
+            "maxLength": 64,
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "dispatched",
+              "completed",
+              "failed",
+              "uncertain"
+            ]
+          },
+          "summary": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 500
+          }
+        }
+      },
+      "output": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "occurrence",
+          "automationId",
+          "workflowId",
+          "workflowVersion",
+          "dueAt",
+          "status",
+          "claimedBy",
+          "summary",
+          "kanbanIssueId",
+          "kanbanSync",
+          "updatedAt"
+        ],
+        "properties": {
+          "occurrence": {
+            "type": "string"
+          },
+          "automationId": {
+            "type": "string"
+          },
+          "workflowId": {
+            "type": "string"
+          },
+          "workflowVersion": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "dueAt": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "claimed",
+              "dispatched",
+              "completed",
+              "failed",
+              "missed",
+              "uncertain"
+            ]
+          },
+          "claimedBy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "kanbanIssueId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "kanbanSync": {
+            "type": "string",
+            "enum": [
+              "none",
+              "pending",
+              "done",
+              "failed"
+            ]
+          },
+          "updatedAt": {
+            "type": "string"
+          }
+        }
+      },
+      "crud": [
+        "update"
+      ],
+      "effect": "write",
+      "idempotency": "supported",
+      "receipt": true,
       "audience": "agent"
     },
     {
@@ -3500,18 +3927,640 @@
       "idempotency": "none",
       "receipt": false,
       "audience": "person"
+    },
+    {
+      "id": "automation_set",
+      "title": "Schedule a workflow",
+      "description": "Create or change the schedule of a workflow for one Bound agent (cron, 5 fields, UTC).",
+      "input": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "workflowId",
+          "agentId",
+          "cron"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[a-z]{3}_[0-9A-Za-z]{1,60}$"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "workflowId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[a-z]{3}_[0-9A-Za-z]{1,60}$"
+          },
+          "versionPin": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "policyVersion": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "agentId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^agt_[0-9A-Za-z]{1,60}$"
+          },
+          "cron": {
+            "type": "string",
+            "minLength": 9,
+            "maxLength": 120
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "misfireGraceSec": {
+            "type": "integer",
+            "minimum": 30,
+            "maximum": 3600
+          },
+          "kanbanProject": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "output": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "workflowId",
+          "workflowTitle",
+          "versionPin",
+          "policyVersion",
+          "agentId",
+          "cron",
+          "enabled",
+          "misfireGraceSec",
+          "kanbanProject",
+          "revision",
+          "nextDueAt",
+          "effectiveNextDueAt",
+          "missedSince",
+          "createdAt",
+          "updatedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "workflowId": {
+            "type": "string"
+          },
+          "workflowTitle": {
+            "type": "string"
+          },
+          "versionPin": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "policyVersion": {
+            "type": "integer"
+          },
+          "agentId": {
+            "type": "string"
+          },
+          "cron": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "misfireGraceSec": {
+            "type": "integer"
+          },
+          "kanbanProject": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "nextDueAt": {
+            "type": "string"
+          },
+          "effectiveNextDueAt": {
+            "type": "string"
+          },
+          "missedSince": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          }
+        }
+      },
+      "crud": [
+        "create",
+        "update"
+      ],
+      "effect": "write",
+      "idempotency": "required",
+      "receipt": true,
+      "audience": "person"
+    },
+    {
+      "id": "automation_pause",
+      "title": "Pause or resume a schedule",
+      "description": "Pause (no new runs) or resume a schedule.",
+      "input": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "revision",
+          "paused"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[a-z]{3}_[0-9A-Za-z]{1,60}$"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "paused": {
+            "type": "boolean"
+          }
+        }
+      },
+      "output": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "workflowId",
+          "workflowTitle",
+          "versionPin",
+          "policyVersion",
+          "agentId",
+          "cron",
+          "enabled",
+          "misfireGraceSec",
+          "kanbanProject",
+          "revision",
+          "nextDueAt",
+          "effectiveNextDueAt",
+          "missedSince",
+          "createdAt",
+          "updatedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "workflowId": {
+            "type": "string"
+          },
+          "workflowTitle": {
+            "type": "string"
+          },
+          "versionPin": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "policyVersion": {
+            "type": "integer"
+          },
+          "agentId": {
+            "type": "string"
+          },
+          "cron": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "misfireGraceSec": {
+            "type": "integer"
+          },
+          "kanbanProject": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "nextDueAt": {
+            "type": "string"
+          },
+          "effectiveNextDueAt": {
+            "type": "string"
+          },
+          "missedSince": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          }
+        }
+      },
+      "crud": [
+        "update"
+      ],
+      "effect": "write",
+      "idempotency": "supported",
+      "receipt": true,
+      "audience": "person"
+    },
+    {
+      "id": "automation_delete",
+      "title": "Delete a schedule",
+      "description": "Delete a schedule. Its run history stays.",
+      "input": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "revision"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[a-z]{3}_[0-9A-Za-z]{1,60}$"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      },
+      "output": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "deleted"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "deleted": {
+            "type": "boolean"
+          }
+        }
+      },
+      "crud": [
+        "update",
+        "delete"
+      ],
+      "effect": "destructive",
+      "holdFamily": "destructive",
+      "idempotency": "supported",
+      "receipt": true,
+      "audience": "person"
+    },
+    {
+      "id": "automations_list",
+      "title": "Schedules",
+      "description": "All schedules with their next due time.",
+      "input": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "output": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "automations"
+        ],
+        "properties": {
+          "automations": {
+            "type": "array",
+            "maxItems": 500,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "workflowId",
+                "workflowTitle",
+                "versionPin",
+                "policyVersion",
+                "agentId",
+                "cron",
+                "enabled",
+                "misfireGraceSec",
+                "kanbanProject",
+                "revision",
+                "nextDueAt",
+                "effectiveNextDueAt",
+                "missedSince",
+                "createdAt",
+                "updatedAt"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "workflowId": {
+                  "type": "string"
+                },
+                "workflowTitle": {
+                  "type": "string"
+                },
+                "versionPin": {
+                  "anyOf": [
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "policyVersion": {
+                  "type": "integer"
+                },
+                "agentId": {
+                  "type": "string"
+                },
+                "cron": {
+                  "type": "string"
+                },
+                "enabled": {
+                  "type": "boolean"
+                },
+                "misfireGraceSec": {
+                  "type": "integer"
+                },
+                "kanbanProject": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "revision": {
+                  "type": "integer"
+                },
+                "nextDueAt": {
+                  "type": "string"
+                },
+                "effectiveNextDueAt": {
+                  "type": "string"
+                },
+                "missedSince": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "createdAt": {
+                  "type": "string"
+                },
+                "updatedAt": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "crud": [
+        "read"
+      ],
+      "effect": "read",
+      "idempotency": "none",
+      "receipt": false,
+      "audience": "person"
+    },
+    {
+      "id": "runs_list",
+      "title": "Run history",
+      "description": "Runs of one schedule or of all schedules, newest first.",
+      "input": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "automationId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[a-z]{3}_[0-9A-Za-z]{1,60}$"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200
+          }
+        }
+      },
+      "output": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "runs"
+        ],
+        "properties": {
+          "runs": {
+            "type": "array",
+            "maxItems": 200,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "occurrence",
+                "automationId",
+                "workflowId",
+                "workflowVersion",
+                "dueAt",
+                "status",
+                "claimedBy",
+                "summary",
+                "kanbanIssueId",
+                "kanbanSync",
+                "updatedAt"
+              ],
+              "properties": {
+                "occurrence": {
+                  "type": "string"
+                },
+                "automationId": {
+                  "type": "string"
+                },
+                "workflowId": {
+                  "type": "string"
+                },
+                "workflowVersion": {
+                  "anyOf": [
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "dueAt": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "claimed",
+                    "dispatched",
+                    "completed",
+                    "failed",
+                    "missed",
+                    "uncertain"
+                  ]
+                },
+                "claimedBy": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "summary": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "kanbanIssueId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "kanbanSync": {
+                  "type": "string",
+                  "enum": [
+                    "none",
+                    "pending",
+                    "done",
+                    "failed"
+                  ]
+                },
+                "updatedAt": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "crud": [
+        "read"
+      ],
+      "effect": "read",
+      "idempotency": "none",
+      "receipt": false,
+      "audience": "person"
     }
   ],
   "companions": [
     {
       "product": "kanban",
       "operations": [
-        "issues_list"
+        "issues_list",
+        "issue_create",
+        "issue_complete",
+        "issue_block"
       ],
       "crud": [
-        "read"
+        "read",
+        "create",
+        "update"
       ],
-      "purpose": "Reads done Kanban issues to spot work one agent repeated, and suggests it as a workflow."
+      "purpose": "Reads done Kanban issues to spot repeated work, and records every scheduled run as a Kanban issue assigned to the Bound agent."
     }
   ],
   "needsAgentDirectory": true,

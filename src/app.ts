@@ -13,6 +13,7 @@ import { OP, type OpId } from "#kit";
 import { buildGroups, DEFAULT_MIN_REPEATS, KANBAN, KANBAN_QUERY, parseDoneIssues, suggestionText } from "./detector.ts";
 import { ALLOWLIST_NOTICE, allowedFromSteps, diffNotice, diffSnapshots, ModelError, type Snapshot } from "./model.ts";
 import { buildRecipe } from "./recipe.ts";
+import * as routines from "./routines.ts";
 import * as store from "./store.ts";
 import { TEMPLATES } from "./templates.ts";
 
@@ -103,6 +104,69 @@ export async function scanKanban(db: Db, callApp: OpContext["callApp"], minRepea
   return { kanban: "ok", message: null, issuesSeen: issues.length, created, updated };
 }
 
+// ── Kanban run issues (step B): Evolution records every claimed run as one Kanban issue ASSIGNED to the Bound agent
+// (template = the workflow's run key), and closes it on the run's terminal report. Kanban is optional: a failed
+// companion call never fails a claim or a report; the run then shows kanbanSync "failed".
+type CallApp = OpContext["callApp"];
+
+function issueIdOf(output: unknown): string | null {
+  const o = (output && typeof output === "object" ? output : {}) as Record<string, unknown>;
+  const v = o.id ?? (o.issue && typeof o.issue === "object" ? (o.issue as Record<string, unknown>).id : undefined);
+  return typeof v === "string" && v ? v : null;
+}
+
+export async function createRunIssue(
+  db: Db,
+  callApp: CallApp,
+  job: routines.ClaimedJob,
+  automation: routines.Automation,
+  agentId: string,
+): Promise<string | null> {
+  const input: Record<string, unknown> = {
+    title: `Run: ${job.title} (${job.dueAt.slice(0, 16).replace("T", " ")} UTC)`.slice(0, 200),
+    summary: `Scheduled run of the Evolution workflow ${job.workflowId} v${job.version} (occurrence ${job.occurrence.slice(0, 12)}). ${job.instruction}`.slice(0, 4000),
+    status: "in_progress",
+    assignee: agentId,
+    template: routines.runTemplateKey(job.workflowId),
+    ...(automation.kanbanProject ? { project: automation.kanbanProject } : {}),
+  };
+  try {
+    const r = await callApp(KANBAN.product, "issue_create", input as never, { idempotencyKey: `evolution-run:${job.occurrence}` });
+    const id = r.status === "ok" ? issueIdOf(r.output) : null;
+    routines.setKanban(db, job.occurrence, id, id ? "none" : "failed");
+    return id;
+  } catch {
+    routines.setKanban(db, job.occurrence, null, "failed");
+    return null;
+  }
+}
+
+export async function closeRunIssue(db: Db, callApp: CallApp, run: routines.Run): Promise<void> {
+  if (!run.kanbanIssueId || !routines.TERMINAL.has(run.status)) return;
+  const text = (run.summary ?? "").trim();
+  const [op, input] =
+    run.status === "completed"
+      ? ["issue_complete", { issue: run.kanbanIssueId, result: (text || "Run completed.").slice(0, 4000) }]
+      : ["issue_block", { issue: run.kanbanIssueId, reason: `Run ${run.status}${text ? `: ${text}` : "."}`.slice(0, 1000) }];
+  try {
+    const r = await callApp(KANBAN.product, op, input as never, { idempotencyKey: `evolution-close:${run.occurrence}:${run.status}` });
+    routines.setKanban(db, run.occurrence, null, r.status === "ok" ? "done" : "failed");
+  } catch {
+    routines.setKanban(db, run.occurrence, null, "failed");
+  }
+}
+
+/** Closes Kanban issues of runs that ended without a report (swept to uncertain) — a few per write call. */
+async function flushKanban(db: Db, callApp: CallApp): Promise<void> {
+  for (const run of routines.pendingKanban(db, 5)) await closeRunIssue(db, callApp, run);
+}
+
+function automationView(db: Db, id: string): routines.AutomationView {
+  const a = routines.listAutomations(db).find((x) => x.id === id);
+  if (!a) throw new store.StoreError("not_found", "No schedule with this id.");
+  return a;
+}
+
 export const handlers = {
   // ── agent ──
   [OP.suggestionCreate]: op<K.SuggestionCreateInput, K.SuggestionCreateOutput>({
@@ -135,6 +199,38 @@ export const handlers = {
   [OP.workflowGet]: op<K.WorkflowGetInput, K.WorkflowGetOutput>({
     async run(input, ctx) {
       return { ...store.getVersion(ctx.db, input.id, input.version), notice: ALLOWLIST_NOTICE };
+    },
+  }),
+
+  [OP.routinesDue]: op<K.RoutinesDueInput, K.RoutinesDueOutput>({
+    // Pure read (no state change, no receipt): the poll target of `tealbrick agent serve` routines mode.
+    async run(_input, ctx) {
+      if (ctx.caller.type !== "agent" || ctx.caller.mode !== "bound") return { jobs: [] };
+      return { jobs: routines.dueJobs(ctx.db, ctx.caller.id) };
+    },
+  }),
+  [OP.routineClaim]: op<K.RoutineClaimInput, K.RoutineClaimOutput>({
+    redact: (input, output) => `Claim ${input.occurrence.slice(0, 12)}: ${output ? (output.claimed ? "claimed" : output.reason) : "?"}`,
+    async run(input, ctx) {
+      const callApp = ctx.callApp.bind(ctx);
+      const r = routines.claim(ctx.db, { id: ctx.caller.id, mode: ctx.caller.type === "agent" ? ctx.caller.mode : null }, input.occurrence);
+      if (!r.claimed) {
+        await flushKanban(ctx.db, callApp);
+        return { claimed: false, reason: r.reason, job: null };
+      }
+      const kanbanIssueId = await createRunIssue(ctx.db, callApp, r.job, r.automation, ctx.caller.id);
+      await flushKanban(ctx.db, callApp);
+      return { claimed: true, reason: null, job: { ...r.job, kanbanIssueId, kanbanTemplate: routines.runTemplateKey(r.job.workflowId) } };
+    },
+  }),
+  [OP.routineReport]: op<K.RoutineReportInput, K.RoutineReportOutput>({
+    redact: (input) => `Run ${input.occurrence.slice(0, 12)}: ${input.status}`,
+    async run(input, ctx) {
+      const callApp = ctx.callApp.bind(ctx);
+      const { run, changed } = routines.report(ctx.db, ctx.caller.id, input.occurrence, input.status, input.summary?.trim() || null);
+      if (changed) await closeRunIssue(ctx.db, callApp, run);
+      await flushKanban(ctx.db, callApp);
+      return routines.getRun(ctx.db, input.occurrence) ?? run;
     },
   }),
 
@@ -238,6 +334,35 @@ export const handlers = {
           "Save this JSON as a file. Import it in Portal (tealbrick recipe import <file>, then open the review link), check the steps and apply them with one confirmation. Portal creates the agent, sets it Bound with these operations only, and connects it to each app. Connect the agent on its machine with tealbrick agent login. " +
           ALLOWLIST_NOTICE,
       };
+    },
+  }),
+  [OP.automationSet]: op<K.AutomationSetInput, K.AutomationSetOutput>({
+    redact: (input) => `Schedule ${input.id ?? "new"} for ${input.workflowId}: ${input.cron}`,
+    async run(input, ctx) {
+      return automationView(ctx.db, routines.setAutomation(ctx.db, input).id);
+    },
+  }),
+  [OP.automationPause]: op<K.AutomationPauseInput, K.AutomationPauseOutput>({
+    redact: (input) => `Schedule ${input.id}: ${input.paused ? "paused" : "resumed"}`,
+    async run(input, ctx) {
+      return automationView(ctx.db, routines.pauseAutomation(ctx.db, input.id, input.revision, input.paused).id);
+    },
+  }),
+  [OP.automationDelete]: op<K.AutomationDeleteInput, K.AutomationDeleteOutput>({
+    redact: (input) => `Schedule ${input.id}: deleted`,
+    async run(input, ctx) {
+      routines.deleteAutomation(ctx.db, input.id, input.revision);
+      return { id: input.id, deleted: true };
+    },
+  }),
+  [OP.automationsList]: op<K.AutomationsListInput, K.AutomationsListOutput>({
+    async run(_input, ctx) {
+      return { automations: routines.listAutomations(ctx.db) };
+    },
+  }),
+  [OP.runsList]: op<K.RunsListInput, K.RunsListOutput>({
+    async run(input, ctx) {
+      return { runs: routines.listRuns(ctx.db, { automationId: input.automationId, limit: input.limit ?? 50 }) };
     },
   }),
 } satisfies Record<OpId, HandlerSpec>;

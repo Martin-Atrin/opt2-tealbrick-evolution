@@ -18,9 +18,11 @@ description: When and how to suggest a workflow for repeated work, and how a Bou
 - Check the owner's decision with `evolution__suggestions_list` or `evolution__suggestion_get`. You see only your own suggestions.
 
 ## If you are a Bound agent
-- Read your workflow first: `evolution__workflow_get` with the workflow id from your purpose text.
+- Your scheduled runs come from your own runner (`tealbrick agent serve` in routines mode). It calls `evolution__routines_due`, claims one run with `evolution__routine_claim`, gives you the reviewed workflow, and reports the result with `evolution__routine_report`. Do not claim or report runs yourself while the runner is active.
+- Read your workflow with `evolution__workflow_get` (the id is in your purpose text and in each run).
 - You may call only the operations the workflow allows. The bridge refuses every other operation.
-- The steps are the owner's reviewed guidance. Follow them, and report what you did on the Kanban board under your own name.
+- The steps are the owner's reviewed guidance. Follow them. Each run already has a Kanban issue assigned to you (`kanbanIssueId` in the run); add comments there if you can, and Evolution closes it when the run is reported.
+- Do one run per claim and then stop. Never start another run of the workflow on your own.
 
 ## Held calls
 If a call answers `held`, the owner must approve it. Poll `evolution__tb_hold_status` with the `holdId`, then repeat the same call.

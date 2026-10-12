@@ -4,6 +4,8 @@
 // at least N times (default 3). Kanban is read through the companion grant to `kanban.issues_list` (read only).
 
 export const DEFAULT_MIN_REPEATS = 3;
+/** Template keys of Evolution's own run issues (routines.runTemplateKey). */
+export const RUN_TEMPLATE_PREFIX = "evolution:";
 export const KANBAN = { product: "kanban", op: "issues_list" } as const;
 /** Input sent to kanban.issues_list. Kanban owns the schema; this is the documented filter (see README "Kanban"). */
 export const KANBAN_QUERY = { status: "done", limit: 200 } as const;
@@ -47,6 +49,8 @@ export function parseDoneIssues(output: unknown): DoneIssue[] {
     if (!id || !title || !agent) continue;
     if (i.status !== undefined && i.status !== "done") continue;
     const tpl = i.template && typeof i.template === "object" ? str((i.template as Record<string, unknown>).id) : str(i.template);
+    // runs of an Evolution workflow are already automated: never suggest them again
+    if ((tpl ?? str(i.templateId))?.startsWith(RUN_TEMPLATE_PREFIX)) continue;
     out.push({ id, title, agentId: agent.id, agentName: agent.name, template: tpl ?? str(i.templateId), at: str(i.completedAt) ?? str(i.updatedAt) });
   }
   return out;

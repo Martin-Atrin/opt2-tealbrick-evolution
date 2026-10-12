@@ -34,15 +34,16 @@ test("the generated kit matches the manifest and every operation has exactly one
   assert.deepEqual(Object.keys(handlers).sort(), ids);
 });
 
-test("agents can only suggest and read; deciding, editing, promoting and exporting are owner-only person ops", () => {
+test("agents suggest, read, and claim/report their runs; deciding, editing, promoting, exporting and scheduling are owner-only person ops", () => {
   const agentOps = manifest.operations.filter((o) => o.audience === "agent").map((o) => o.id);
-  assert.deepEqual(agentOps.sort(), ["suggestion_create", "suggestion_get", "suggestions_list", "workflow_get"]);
-  for (const id of ["suggestion_decide", "draft_create", "draft_update", "workflow_promote", "recipe_export", "workflow_diff", "detector_scan"])
+  assert.deepEqual(agentOps.sort(), ["routine_claim", "routine_report", "routines_due", "suggestion_create", "suggestion_get", "suggestions_list", "workflow_get"]);
+  assert.equal(manifest.operations.find((o) => o.id === "routines_due")?.effect, "read", "the poll target changes nothing");
+  for (const id of ["suggestion_decide", "draft_create", "draft_update", "workflow_promote", "recipe_export", "workflow_diff", "detector_scan", "automation_set", "automation_pause", "automation_delete"])
     assert.ok((PERSON_OPS as readonly string[]).includes(id), `${id} is a person op`);
   const create = manifest.operations.find((o) => o.id === "suggestion_create");
   assert.equal(create?.idempotency, "required");
   assert.deepEqual(manifest.companions, [
-    { product: "kanban", operations: ["issues_list"], crud: ["read"], purpose: manifest.companions?.[0]?.purpose },
+    { product: "kanban", operations: ["issues_list", "issue_create", "issue_complete", "issue_block"], crud: ["read", "create", "update"], purpose: manifest.companions?.[0]?.purpose },
   ]);
 });
 

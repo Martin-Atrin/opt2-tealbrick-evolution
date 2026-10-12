@@ -101,7 +101,7 @@ function Detail({ id }: { id: string }) {
         <Select value={String(v.version)} onChange={(e) => setShown(Number(e.target.value))} options={options} />
       </Field>
       <p>{v.instruction}</p>
-      <p className="tb-muted">Trigger: {v.trigger || "none set"} (schedules come in a later version).</p>
+      <p className="tb-muted">Trigger: {v.trigger || "none set"}. Schedule runs on the Schedules page.</p>
       {v.steps.length ? (
         <ol>
           {v.steps.map((s) => (

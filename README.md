@@ -7,8 +7,9 @@ and exports a recipe that creates a Bound agent for a workflow (product id `evol
 lives under `Martin-Atrin` during the build; it moves to the Teal Brick organisation as one clean commit when opt2 is
 released. It is not the current production system.
 
-Owner lane: Lead · Evolution. Scope of 0.1 = "step A" (decision C83): suggestions, owner review, drafts, versions,
-diffs, recipe export, Kanban pattern detector. No schedules and no Bound-agent execution yet (step B).
+Owner lane: Lead · Evolution. 0.1 = "step A" (decision C83): suggestions, owner review, drafts, versions, diffs,
+recipe export, Kanban pattern detector. 0.2 = "step B": schedules and runs claimed at most once by the Bound agent's own
+runner (`tealbrick agent serve` routines mode); every run is a Kanban issue assigned to the Bound agent.
 
 ## No secrets policy
 
@@ -29,6 +30,8 @@ Kanban done issues ──detector (same template or title, one agent, N ≥ 3)�
 owner (person ops): review → approve → draft (steps, allowed ops per product, trigger) → promote v1, v2 …
                     → diff versions → recipe_export (tealbrick.recipe/1) → owner imports + applies it in Portal
                     → a Bound agent whose grant allows only the workflow's operations
+                    → schedule (cron, UTC) → the agent's runner: routines_due → routine_claim → one turn → routine_report
+                    → every run = one Kanban issue assigned to the Bound agent (template evolution:<workflow id>)
 ```
 
 The UI says it plainly: **the agent may call these operations** (the bridge blocks every other one); the steps are
@@ -44,6 +47,18 @@ reviewed guidance, not an enforced program. Temporal and the v1 step runner are 
 | `templates_list`, `draft_create`, `drafts_list`, `draft_get`, `draft_update` | person | drafts from a suggestion, a seed template or blank; revisioned edits |
 | `workflow_promote`, `workflows_list`, `workflow_versions`, `workflow_diff` | person | versions (immutable snapshots) and diffs |
 | `recipe_export` | person | `agents.create` + `agents.policy_set` (bound, workflow ops) + `edges.create` per product |
+| `routines_due` | agent | Bound caller's due runs; pure read, the runner's poll target (Free callers get none) |
+| `routine_claim` | agent | `{occurrence}` → at most one claim ever succeeds; answers the reviewed workflow, or `claimed: false` + reason (`already_claimed`, `missed`, `not_due`, `paused`, `not_bound`, `version_missing`, `policy_stale`) |
+| `routine_report` | agent | `dispatched` → `completed` / `failed` / `uncertain` (+ summary); closes the run's Kanban issue |
+| `automation_set`, `automation_pause`, `automation_delete`, `automations_list`, `runs_list` | person | schedules (cron, version pin or active, applied policy version, Kanban project) and run history |
+
+### Schedules and runs (0.2)
+- occurrence = sha256 of `[automationId, revision, dueAt]`; the run row's primary key makes a claim at-most-once (v1 routines model).
+- Misfire grace (default 120 s): a run not claimed in time is `missed`; missed periods collapse into one record, never several runs.
+- `claimed` > 10 min or `dispatched` > 30 min without a report → `uncertain`, never offered again (a late report still closes it).
+- Following the active version: if it allows more than the version whose recipe the owner applied (`policyVersion`), claims answer `policy_stale` until the owner applies the new recipe and updates the schedule.
+- Kanban (companion `issue_create`, `issue_complete`, `issue_block`): one issue per claimed run, assigned to the Bound agent, template `evolution:<workflow id>`; the detector never suggests these. Kanban down → the run still runs (`kanbanSync: failed`).
+- Cron: 5 fields, UTC. `src/cron.ts` is an interim copy of the `nextCronTime(cron, after)` helper that `@opt2-tealbrick/manifest` 0.1.7 exports; it delegates to the package as soon as the export exists.
 
 ### Kanban (soft dependency)
 The manifest declares one companion: `kanban.issues_list` (read). Evolution calls it with
@@ -67,9 +82,10 @@ owner shares with it (Kanban shared projects, or projects granted to Evolution o
 | `src/model.ts` | pure rules: steps, allowlist, promotion checks, version diff |
 | `src/detector.ts` | Kanban pattern detector (harvest of the v1 evaluator) |
 | `src/recipe.ts` | Bound-agent recipe builder |
+| `src/routines.ts`, `src/cron.ts` | schedules, due/claim/report, misfire, sweep; cron helper (interim) |
 | `src/templates.ts` | seed workflow templates |
-| `src/ui/` | owner UI in `<AppShell>`: Suggestions, Drafts, Workflows, Holds, Agents |
-| `migrations/0001_init.sql` | baseline; forward-only, never edit a released file |
+| `src/ui/` | owner UI in `<AppShell>`: Suggestions, Drafts, Workflows, Schedules, Holds, Agents |
+| `migrations/` | `0001_init.sql` (0.1), `0002_routines.sql` (0.2); forward-only, never edit a released file |
 | `skills/use-evolution/SKILL.md` | agent skill: when to suggest, Bound-agent behaviour |
 | `Dockerfile` | the one opt2 app Dockerfile pattern (SDK-API §15.1) |
 | `.woodpecker/ci.yaml`, `.github/workflows/opt2-release.yml` | opt2 CI template ci-v9.1 (generated, do not edit) |

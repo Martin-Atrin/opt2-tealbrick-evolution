@@ -45,7 +45,7 @@ test("a recipe Core can import: format, draftable ops, backward refs, portable",
   assert.ok(JSON.stringify(r).includes(wf.id), "the purpose names the workflow (inside text, not as a bare id)");
 });
 
-test("steps: create the card, set it Bound with the allowlist, one edge per product (incl. Evolution workflow_get)", () => {
+test("steps: create the card, set it Bound with the allowlist, one edge per product (incl. Evolution workflow_get and the routine ops)", () => {
   const r = buildRecipe(wf, { agentName: "Rollup bot", harnessOptionId: "claude-desktop" });
   const [create, policy, ...edges] = r.steps;
   assert.equal(create?.opId, "agents.create");
@@ -60,14 +60,14 @@ test("steps: create the card, set it Bound with the allowlist, one edge per prod
   assert.equal(policy?.input.mode, "bound");
   assert.ok(((policy?.input.held ?? []) as string[]).includes("money"), "money must be held (policy_invalid otherwise)");
   assert.deepEqual(policy?.input.workflow, [
-    { product: "evolution", operations: ["workflow_get"] },
+    { product: "evolution", operations: ["routine_claim", "routine_report", "routines_due", "workflow_get"] },
     { product: "kanban", operations: ["issue_create", "issues_list"] },
     { product: "knowledge", operations: ["remember"] },
   ]);
   assert.deepEqual(
     edges.map((e) => [e.opId, e.input.product, e.input.crud]),
     [
-      ["edges.create", "evolution", ["read"]],
+      ["edges.create", "evolution", ["read", "update"]],
       ["edges.create", "kanban", ["create", "read"]],
       ["edges.create", "knowledge", ["create"]],
     ],

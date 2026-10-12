@@ -4,17 +4,19 @@ import { useAgents, useHolds, useSession } from "@opt2-tealbrick/miniapp-sdk/cli
 import { AppShell, Button, Notice, STANDARD_PAGES, Tag } from "@opt2-tealbrick/ui";
 import { useEffect, useState } from "react";
 import { Drafts } from "./Drafts.tsx";
+import { Schedules } from "./Schedules.tsx";
 import { Suggestions } from "./Suggestions.tsx";
 import { Workflows } from "./Workflows.tsx";
 
 const NAME = "Evolution";
 
 /** Pages by shell id → path under the base `/a/evolution/` (the SDK serves index.html for every UI path). */
-const PATHS: Record<string, string> = { suggestions: "./", drafts: "./drafts", workflows: "./workflows", holds: "./holds", agents: "./configure" };
+const PATHS: Record<string, string> = { suggestions: "./", drafts: "./drafts", workflows: "./workflows", schedules: "./schedules", holds: "./holds", agents: "./configure" };
 const APP_PAGES = [
   { id: "suggestions", label: "Suggestions" },
   { id: "drafts", label: "Drafts" },
   { id: "workflows", label: "Workflows" },
+  { id: "schedules", label: "Schedules" },
 ];
 const PAGES = [...APP_PAGES, ...STANDARD_PAGES.filter((p) => p.id in PATHS)];
 function pageOf(pathname: string): string {
@@ -86,6 +88,8 @@ export function App() {
         );
       case "workflows":
         return <Workflows openId={openWorkflow} />;
+      case "schedules":
+        return <Schedules />;
       case "holds":
         return <Holds />;
       case "agents":

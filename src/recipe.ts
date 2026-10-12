@@ -8,8 +8,8 @@ import type { Allowed, Crud, Snapshot } from "./model.ts";
 import { normalizeAllowed } from "./model.ts";
 
 export const RECIPE_FORMAT = "tealbrick.recipe/1";
-/** Evolution itself: a Bound agent must be able to read its workflow. */
-export const SELF_OPS: Allowed = { product: "evolution", operations: ["workflow_get"], crud: ["read"] };
+/** Evolution itself: a Bound agent reads its workflow and claims/reports its scheduled runs. */
+export const SELF_OPS: Allowed = { product: "evolution", operations: ["routine_claim", "routine_report", "routines_due", "workflow_get"], crud: ["read", "update"] };
 /** A new card's policy revision in Core (agent_policies.revision starts at 1). */
 export const NEW_POLICY_REVISION = 1;
 /** Core defaults for a new card (PORTAL-API §2.1 Agent Policy); the owner can tighten them in Portal. */
@@ -45,7 +45,7 @@ export function buildRecipe(
   const allowed = boundAllowed(wf.snapshot.allowed);
   const name = clip(opts.agentName?.trim() || `${wf.snapshot.title} (Bound)`, 64);
   const purpose = clip(
-    `Bound agent for the Evolution workflow "${wf.snapshot.title}" v${wf.version}. Before each run, read it with evolution__workflow_get {"id":"${wf.id}"}. It may call only the allowed operations.`,
+    `Bound agent for the Evolution workflow "${wf.snapshot.title}" v${wf.version}. Runs come from tealbrick agent serve (routines mode); before each run it reads evolution__workflow_get {"id":"${wf.id}"}. It may call only the allowed operations.`,
     500,
   );
   const steps: RecipeStep[] = [
@@ -68,7 +68,7 @@ export function buildRecipe(
     format: RECIPE_FORMAT,
     title: clip(`Bound agent: ${wf.snapshot.title} v${wf.version}`, 120),
     description: clip(
-      `Creates one agent, sets it Bound and connects it to ${allowed.length} app(s). The agent may call only: ${ops}. The bridge blocks every other operation; it does not force the agent to follow the workflow steps. Trigger: ${wf.snapshot.trigger || "none set"} (no schedule runs yet).`,
+      `Creates one agent, sets it Bound and connects it to ${allowed.length} app(s). The agent may call only: ${ops}. The bridge blocks every other operation; it does not force the agent to follow the workflow steps. Trigger: ${wf.snapshot.trigger || "none set"}. Schedule it on Evolution's Schedules page after you apply this recipe.`,
       2000,
     ),
     steps,
