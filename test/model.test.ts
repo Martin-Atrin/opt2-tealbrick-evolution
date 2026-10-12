@@ -48,9 +48,10 @@ test("promotion needs an instruction, an allowlist, and every step op inside it"
 });
 
 test("diff: reorder and edits by step id; narrowing access is not widening", () => {
+  const [a, b] = base.steps as [Snapshot["steps"][number], Snapshot["steps"][number]];
   const next: Snapshot = {
     ...base,
-    steps: [{ ...base.steps[1]!, instruction: "now with text" }, base.steps[0]!, { id: "c", title: "C", instruction: "", ops: [] }],
+    steps: [{ ...b, instruction: "now with text" }, a, { id: "c", title: "C", instruction: "", ops: [] }],
     allowed: normalizeAllowed([{ product: "kanban", operations: ["issues_list"], crud: ["read", "update"] }]),
   };
   const d = diffSnapshots(base, next);

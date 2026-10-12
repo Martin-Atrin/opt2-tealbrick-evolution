@@ -93,7 +93,7 @@ export async function scanKanban(db: Db, callApp: OpContext["callApp"], minRepea
         updated.push(store.toRow(store.addEvidence(db, open.id, evidence, DETECTOR, now)));
         store.coverIssues(db, open.id, g.issues.map((i) => i.id), now);
       } else if (g.issues.length >= minRepeats) {
-        const text = suggestionText(g, agentName(db, g.agentId));
+        const text = suggestionText(g, g.issues.find((i) => i.agentName)?.agentName ?? agentName(db, g.agentId));
         const s = store.createSuggestion(db, { ...text, source: "detector", agentId: g.agentId, createdBy: DETECTOR, evidence, steps: [], groupKey: g.key }, now);
         store.coverIssues(db, s.id, g.issues.map((i) => i.id), now);
         created.push(store.toRow(s));

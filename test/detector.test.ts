@@ -15,7 +15,7 @@ const issue = (id: string, title: string, agent: string, extra: Record<string, u
   id,
   title,
   status: "done",
-  assignee: { type: "agent", id: agent },
+  assignee: { kind: "agent", id: agent, name: agent === AGENT_A.id ? "Agent A" : "Agent B" },
   updatedAt: `2026-10-0${id.slice(-1)}T10:00:00Z`,
   ...extra,
 });
@@ -37,15 +37,18 @@ test("the parser keeps done issues assigned to an agent, in any of the accepted 
     issues: [
       issue("i1", "A", AGENT_A.id),
       { id: "i2", title: "B", status: "done", assigneeId: AGENT_B.id, templateId: "tpl-x" },
-      { id: "i3", title: "C", status: "in_progress", assignee: { type: "agent", id: AGENT_A.id } },
-      { id: "i4", title: "D", status: "done", assignee: { type: "owner", id: "per_1" } },
+      { id: "i3", title: "C", status: "in_progress", assignee: { kind: "agent", id: AGENT_A.id, name: "A" } },
+      { id: "i4", title: "D", status: "done", assignee: { kind: "owner", id: "per_1", name: "Owner" } },
+      { id: "i6", title: "E", status: "done", assignee: null },
+      { id: "i7", title: "F", status: "done", assignee: { type: "agent", id: AGENT_A.id } },
       { id: "i5", status: "done", assignee: AGENT_A.id },
       "junk",
     ],
   });
-  assert.deepEqual(out.map((i) => [i.id, i.agentId, i.template]), [
-    ["i1", AGENT_A.id, null],
-    ["i2", AGENT_B.id, "tpl-x"],
+  assert.deepEqual(out.map((i) => [i.id, i.agentId, i.agentName, i.template]), [
+    ["i1", AGENT_A.id, "Agent A", null],
+    ["i2", AGENT_B.id, null, "tpl-x"],
+    ["i7", AGENT_A.id, null, null],
   ]);
   assert.deepEqual(parseDoneIssues({ items: [issue("i1", "A", AGENT_A.id)] }).length, 1);
   assert.deepEqual(parseDoneIssues(null), []);
@@ -72,7 +75,6 @@ test("groups are per agent and per template (or title); covered issues are skipp
 
 test("Kanban evidence → suggestion: N ≥ 3 by one agent creates one suggestion; a re-scan adds new evidence, never duplicates", async () => {
   const db = migratedDb();
-  db.prepare("INSERT INTO agent_names (id, name, seen_at) VALUES (?, ?, ?)").run(AGENT_A.id, "Agent A", 1);
   const calls: { product: string; op: string; input: unknown }[] = [];
   const three = [issue("i1", "Weekly report 1", AGENT_A.id), issue("i2", "Weekly report 2", AGENT_A.id), issue("i3", "weekly report 3", AGENT_A.id), issue("i4", "Weekly report 4", AGENT_B.id)];
   const r1 = await call<K.DetectorScanOutput>(H, "detector_scan", {}, ctxFor(db, OWNER, kanban(three, calls)));

@@ -12,21 +12,25 @@ export interface DoneIssue {
   id: string;
   title: string;
   agentId: string;
+  agentName: string | null;
   template: string | null;
   at: string | null;
 }
 
 const str = (v: unknown): string | null => (typeof v === "string" && v.trim() ? v.trim() : null);
 
-/** The agent an issue is attributed to: its assignee if an agent, else nothing (owner work is not a Bound candidate). */
-function agentOf(i: Record<string, unknown>): string | null {
+/** The agent an issue is attributed to: its assignee if an agent, else nothing (owner work is not a Bound candidate).
+ *  Kanban 0.1 shape: `assignee {kind: "agent" | "owner" | "app", id, name} | null`. */
+function agentOf(i: Record<string, unknown>): { id: string; name: string | null } | null {
   const a = i.assignee;
   if (a && typeof a === "object") {
     const o = a as Record<string, unknown>;
-    if ((o.type === undefined || o.type === "agent") && str(o.id)) return str(o.id);
-    return null;
+    const kind = o.kind ?? o.type;
+    const id = str(o.id);
+    return (kind === undefined || kind === "agent") && id ? { id, name: str(o.name) } : null;
   }
-  return str(a) ?? str(i.assigneeId) ?? str(i.assigneeAgentId);
+  const id = str(a) ?? str(i.assigneeId) ?? str(i.assigneeAgentId);
+  return id?.startsWith("agt_") ? { id, name: null } : null;
 }
 
 /** Tolerant reader of the kanban.issues_list output: `{issues: [...]}` or `{items: [...]}`; keeps done agent issues only. */
@@ -39,11 +43,11 @@ export function parseDoneIssues(output: unknown): DoneIssue[] {
     const i = raw as Record<string, unknown>;
     const id = str(i.id);
     const title = str(i.title);
-    const agentId = agentOf(i);
-    if (!id || !title || !agentId) continue;
+    const agent = agentOf(i);
+    if (!id || !title || !agent) continue;
     if (i.status !== undefined && i.status !== "done") continue;
     const tpl = i.template && typeof i.template === "object" ? str((i.template as Record<string, unknown>).id) : str(i.template);
-    out.push({ id, title, agentId, template: tpl ?? str(i.templateId), at: str(i.completedAt) ?? str(i.updatedAt) });
+    out.push({ id, title, agentId: agent.id, agentName: agent.name, template: tpl ?? str(i.templateId), at: str(i.completedAt) ?? str(i.updatedAt) });
   }
   return out;
 }

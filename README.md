@@ -47,8 +47,8 @@ reviewed guidance, not an enforced program. Temporal and the v1 step runner are 
 
 ### Kanban (soft dependency)
 The manifest declares one companion: `kanban.issues_list` (read). Evolution calls it with
-`{"status": "done", "limit": 200}` and reads `issues[]` (or `items[]`) with `id`, `title`, `status`, the assignee
-(`assignee {type, id}`, `assigneeId` or `assigneeAgentId`) and an optional `template` / `templateId`. Without Kanban
+`{"status": "done", "limit": 200}` and reads `issues[]` with `id`, `title`, `status`, `assignee {kind, id, name}`
+(Kanban 0.1; only `kind: "agent"` counts) and, if Kanban adds one later, `template` / `templateId`. Without Kanban
 the scan answers `unavailable` and Evolution works with agent suggestions alone.
 
 ### Recipe
