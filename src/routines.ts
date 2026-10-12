@@ -1,12 +1,13 @@
 // Step B: schedules (automations) and runs, harvested from the v1 avm routines model (STEP-B-DESIGN §1):
 //   occurrence = sha256([automationId, revision, dueAt]); claim = INSERT of the run row (primary key) → at-most-once;
 //   due older than the misfire grace → missed (several missed periods collapse into one row, never several runs);
+//   the due / misfire rule and the cron parser are the ONE shared helper in @opt2-tealbrick/manifest (cronDue,
+//   nextCronTime); this file only stores what they decide.
 //   claimed > 10 min or dispatched > 30 min without a report → uncertain (never offered again; a late report may
 //   still close it). Due times are computed when asked; nothing here runs on a timer and nothing starts an agent.
 import { createHash } from "node:crypto";
-import { ulid } from "@opt2-tealbrick/manifest";
+import { CronError, cronDue, nextCronTime, ulid } from "@opt2-tealbrick/manifest";
 import type { Db } from "@opt2-tealbrick/miniapp-sdk";
-import { CronError, latestFireAtOrBefore, nextCronTime } from "./cron.ts";
 import { diffSnapshots } from "./model.ts";
 import { getVersion, getWorkflow, StoreError, snapshotOf, type Version } from "./store.ts";
 
@@ -118,11 +119,14 @@ function load(db: Db, id: string): Row {
 }
 
 function next(cron: string, after: number): number {
+  let d: Date | null;
   try {
-    return nextCronTime(cron, after);
+    d = nextCronTime(cron, after);
   } catch (e) {
     throw new StoreError("validation_failed", e instanceof CronError ? e.message : "Invalid schedule.", { pointer: "/cron" });
   }
+  if (!d) throw new StoreError("validation_failed", "This schedule never fires (no time in the next 5 years).", { pointer: "/cron" });
+  return d.getTime();
 }
 
 // ── owner side ──
@@ -197,21 +201,24 @@ export function deleteAutomation(db: Db, id: string, revision: number, now: numb
   });
 }
 
-export interface DueState {
-  /** latest fire time ≤ now that is still inside the misfire grace (the one runnable occurrence) */
+export interface Settled {
+  row: Row;
+  /** the one occurrence runnable now (inside the grace), or null */
   due: number | null;
-  /** first fire time that will never run (older than the grace, or skipped by a newer one) */
-  missedFrom: number | null;
-  /** next fire time after now */
-  next: number;
 }
 
-export function dueState(a: Pick<Row, "cron" | "nextDueAt" | "grace">, now: number): DueState {
-  const latest = latestFireAtOrBefore(a.cron, a.nextDueAt, now);
-  if (latest === null) return { due: null, missedFrom: null, next: a.nextDueAt };
-  const nxt = nextCronTime(a.cron, now);
-  if (now - latest <= a.grace * 1000) return { due: latest, missedFrom: latest > a.nextDueAt ? a.nextDueAt : null, next: nxt };
-  return { due: null, missedFrom: a.nextDueAt, next: nxt };
+/** Applies the shared due / misfire rule (`cronDue`) and stores what it decides: a due time older than the grace is
+ *  recorded `missed` (missed periods collapse into that one record) and the pending due time moves past now; a
+ *  schedule that never fires again is switched off. This is bookkeeping of facts that follow from the clock alone,
+ *  so the read ops (routines_due, the owner's lists) may run it too. Nothing here claims or starts a run. */
+export function settle(db: Db, a: Row, now: number): Settled {
+  const r = cronDue(a.cron, { nextDueAt: new Date(a.nextDueAt), now: new Date(now), graceSec: a.grace });
+  if (!r.due) return { row: a, due: null };
+  if (!r.missed) return { row: a, due: r.due.getTime() };
+  recordMissed(db, a, r.due.getTime(), now);
+  if (r.nextDueAt) advance(db, a, r.nextDueAt.getTime());
+  else db.prepare("UPDATE automations SET enabled = 0 WHERE id = ?").run(a.id);
+  return { row: load(db, a.id), due: null };
 }
 
 export interface AutomationView extends Automation {
@@ -221,26 +228,29 @@ export interface AutomationView extends Automation {
 }
 
 export function listAutomations(db: Db, now: number = Date.now()): AutomationView[] {
-  return db
-    .prepare("SELECT * FROM automations WHERE deleted_at IS NULL ORDER BY created_at DESC")
-    .all()
-    .map(toRow)
-    .map((r) => {
-      const s = dueState(r, now);
-      const title = (() => {
-        try {
-          return getWorkflow(db, r.workflowId).title;
-        } catch {
-          return r.workflowId;
-        }
-      })();
-      return {
-        ...view(r),
-        workflowTitle: title,
-        effectiveNextDueAt: iso(s.due ?? (s.next > r.nextDueAt ? s.next : r.nextDueAt)),
-        missedSince: s.missedFrom === null ? null : iso(s.missedFrom),
-      };
-    });
+  return db.transaction(() =>
+    db
+      .prepare("SELECT * FROM automations WHERE deleted_at IS NULL ORDER BY created_at DESC")
+      .all()
+      .map(toRow)
+      .map((r0) => {
+        const { row: r, due } = settle(db, r0, now);
+        const title = (() => {
+          try {
+            return getWorkflow(db, r.workflowId).title;
+          } catch {
+            return r.workflowId;
+          }
+        })();
+        const last = db.prepare("SELECT status, due_at FROM routine_runs WHERE automation_id = ? ORDER BY due_at DESC LIMIT 1").get(r.id);
+        return {
+          ...view(r),
+          workflowTitle: title,
+          effectiveNextDueAt: iso(due ?? r.nextDueAt),
+          missedSince: last && last.status === "missed" ? iso(last.due_at) : null,
+        };
+      }),
+  );
 }
 
 // ── runs ──
@@ -305,19 +315,22 @@ function resolveVersion(db: Db, a: Row): Version | null {
   }
 }
 
-/** routines_due: pure read. Bound callers only; one job per automation at most (the latest fire time in grace). */
+/** routines_due: Bound callers only; one job per automation at most (its due occurrence inside the grace). Claims
+ *  nothing; only records missed runs (see `settle`). */
 export function dueJobs(db: Db, agentId: string, now: number = Date.now()): Job[] {
-  const jobs: Job[] = [];
-  for (const a of db.prepare("SELECT * FROM automations WHERE agent_id = ? AND deleted_at IS NULL AND enabled = 1").all(agentId).map(toRow)) {
-    const s = dueState(a, now);
-    if (s.due === null) continue;
-    const occurrence = occurrenceOf(a.id, a.revision, s.due);
-    if (getRun(db, occurrence)) continue;
-    const v = resolveVersion(db, a);
-    if (!v) continue;
-    jobs.push({ occurrence, automationId: a.id, workflowId: a.workflowId, version: v.version, dueAt: iso(s.due), title: v.title });
-  }
-  return jobs.sort((x, y) => x.dueAt.localeCompare(y.dueAt));
+  return db.transaction(() => {
+    const jobs: Job[] = [];
+    for (const a0 of db.prepare("SELECT * FROM automations WHERE agent_id = ? AND deleted_at IS NULL AND enabled = 1").all(agentId).map(toRow)) {
+      const { row: a, due } = settle(db, a0, now);
+      if (due === null) continue;
+      const occurrence = occurrenceOf(a.id, a.revision, due);
+      if (getRun(db, occurrence)) continue;
+      const v = resolveVersion(db, a);
+      if (!v) continue;
+      jobs.push({ occurrence, automationId: a.id, workflowId: a.workflowId, version: v.version, dueAt: iso(due), title: v.title });
+    }
+    return jobs.sort((x, y) => x.dueAt.localeCompare(y.dueAt));
+  });
 }
 
 export interface ClaimedJob extends Job {
@@ -335,19 +348,14 @@ export type ClaimResult = { claimed: true; job: ClaimedJob; automation: Automati
 export function claim(db: Db, caller: { id: string; mode: string | null }, occurrence: string, now: number = Date.now()): ClaimResult {
   return db.transaction((): ClaimResult => {
     sweep(db, now);
-    if (getRun(db, occurrence)) return { claimed: false, reason: "already_claimed" };
-    if (caller.mode !== "bound") return { claimed: false, reason: "not_bound" };
+    if (caller.mode !== "bound") return { claimed: false, reason: getRun(db, occurrence) ? "already_claimed" : "not_bound" };
+    for (const a0 of db.prepare("SELECT * FROM automations WHERE agent_id = ? AND deleted_at IS NULL").all(caller.id).map(toRow)) settle(db, a0, now);
+    const prior = getRun(db, occurrence);
+    if (prior) return { claimed: false, reason: prior.status === "missed" ? "missed" : "already_claimed" };
     for (const a of db.prepare("SELECT * FROM automations WHERE agent_id = ? AND deleted_at IS NULL").all(caller.id).map(toRow)) {
-      const s = dueState(a, now);
-      const missedOcc = s.missedFrom === null ? null : occurrenceOf(a.id, a.revision, s.missedFrom);
-      if (s.due === null || occurrenceOf(a.id, a.revision, s.due) !== occurrence) {
-        if (missedOcc === occurrence) {
-          recordMissed(db, a, s.missedFrom as number, now);
-          advance(db, a, s.next);
-          return { claimed: false, reason: "missed" };
-        }
-        continue;
-      }
+      const r = cronDue(a.cron, { nextDueAt: new Date(a.nextDueAt), now: new Date(now), graceSec: a.grace });
+      if (!r.due || r.missed || occurrenceOf(a.id, a.revision, r.due.getTime()) !== occurrence) continue;
+      const s = { due: r.due.getTime(), next: r.nextDueAt?.getTime() ?? null };
       if (!a.enabled) return { claimed: false, reason: "paused" };
       const v = resolveVersion(db, a);
       if (!v) return { claimed: false, reason: "version_missing" };
@@ -355,11 +363,11 @@ export function claim(db: Db, caller: { id: string; mode: string | null }, occur
         const applied = resolveVersionAt(db, a.workflowId, a.policyVersion);
         if (!applied || diffSnapshots(snapshotOf(applied), snapshotOf(v)).widensAccess) return { claimed: false, reason: "policy_stale" };
       }
-      if (s.missedFrom !== null) recordMissed(db, a, s.missedFrom, now);
       db.prepare(
         "INSERT INTO routine_runs (occurrence, automation_id, revision, due_at, status, claimed_by, workflow_id, workflow_version, claimed_at, updated_at) VALUES (?, ?, ?, ?, 'claimed', ?, ?, ?, ?, ?)",
       ).run(occurrence, a.id, a.revision, s.due, caller.id, a.workflowId, v.version, now, now);
-      advance(db, a, s.next);
+      if (s.next !== null) advance(db, a, s.next);
+      else db.prepare("UPDATE automations SET enabled = 0 WHERE id = ?").run(a.id);
       return {
         claimed: true,
         automation: view(load(db, a.id)),

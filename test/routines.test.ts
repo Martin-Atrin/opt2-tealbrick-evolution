@@ -1,4 +1,5 @@
 // Step B: schedules, due/claim/report at-most-once, misfire, collapse, sweep, pause, policy_stale, Kanban run issues.
+// Cron and the due / misfire rule come from @opt2-tealbrick/manifest (nextCronTime, cronDue): one mechanism.
 // STEP-B-DESIGN §2.3 rows R1–R7 have runner-side twins in the CLI (bridge c83-routines); these are the server side.
 import assert from "node:assert/strict";
 import { test } from "node:test";
@@ -71,7 +72,7 @@ test("only Bound agents claim; a non-matching occurrence is not_due", () => {
   assert.deepEqual(r.claim(db, OTHER, occ, now), { claimed: false, reason: "not_due" }, "another agent's occurrence does not leak");
 });
 
-test("R6: misfire grace — late polls get no job, missed periods collapse into ONE missed record and ONE next run", () => {
+test("R6: misfire grace (shared cronDue rule) — a late poll gets no job; the due time is recorded missed once and the next period runs", () => {
   const db = migratedDb();
   const a = daily(db);
   const late = T("2026-10-12T08:02:01Z"); // grace 120 s
@@ -79,15 +80,19 @@ test("R6: misfire grace — late polls get no job, missed periods collapse into 
   const missedOcc = r.occurrenceOf(a.id, a.revision, T("2026-10-12T08:00:00Z"));
   assert.deepEqual(r.claim(db, BOUND, missedOcc, late), { claimed: false, reason: "missed" });
   assert.equal(r.listRuns(db, { limit: 10 }, late)[0]?.status, "missed");
+  assert.equal(r.listAutomations(db, late)[0]?.missedSince, "2026-10-12T08:00:00.000Z");
 
-  // offline for three days, back one minute after the fire time: one job (today), earlier days are one missed record
+  // runner offline for days: on return the stored due time is recorded missed ONCE (periods collapse), the pending
+  // due time moves past now, and the next period runs — never a burst of catch-up runs
   const back = T("2026-10-16T08:01:00Z");
-  const jobs = r.dueJobs(db, BOUND.id, back);
-  assert.deepEqual(jobs.map((j) => j.dueAt), ["2026-10-16T08:00:00.000Z"]);
-  assert.equal(r.claim(db, BOUND, jobs[0]?.occurrence as string, back).claimed, true);
-  const runs = r.listRuns(db, { automationId: a.id, limit: 10 }, back);
+  assert.deepEqual(r.dueJobs(db, BOUND.id, back), []);
+  const nextDay = T("2026-10-17T08:00:10Z");
+  const jobs = r.dueJobs(db, BOUND.id, nextDay);
+  assert.deepEqual(jobs.map((j) => j.dueAt), ["2026-10-17T08:00:00.000Z"]);
+  assert.equal(r.claim(db, BOUND, jobs[0]?.occurrence as string, nextDay).claimed, true);
+  const runs = r.listRuns(db, { automationId: a.id, limit: 10 }, nextDay);
   assert.deepEqual(runs.map((x) => [x.dueAt.slice(0, 10), x.status]), [
-    ["2026-10-16", "claimed"],
+    ["2026-10-17", "claimed"],
     ["2026-10-13", "missed"],
     ["2026-10-12", "missed"],
   ]);
@@ -126,7 +131,7 @@ test("pause, resume, edit and delete: a changed schedule never reuses an old occ
   const resumed = r.pauseAutomation(db, a.id, paused.revision, false, now);
   assert.equal(resumed.nextDueAt, "2026-10-13T08:00:00.000Z", "resume starts from now");
   assert.throws(() => r.pauseAutomation(db, a.id, paused.revision, true, now), (e: unknown) => e instanceof store.StoreError && e.code === "revision_conflict");
-  assert.throws(() => r.setAutomation(db, { id: a.id, revision: resumed.revision, workflowId: a.workflowId, agentId: BOUND.id, cron: "61 * * * *" }, now), /minute/);
+  assert.throws(() => r.setAutomation(db, { id: a.id, revision: resumed.revision, workflowId: a.workflowId, agentId: BOUND.id, cron: "61 * * * *" }, now), /out of range/);
   r.deleteAutomation(db, a.id, resumed.revision, now);
   assert.deepEqual(r.listAutomations(db, now), []);
   assert.deepEqual(r.dueJobs(db, BOUND.id, T("2026-10-13T08:00:10Z")), []);
@@ -142,6 +147,7 @@ test("policy_stale: following the active version, a wider version needs the new 
   // the owner applies v2's recipe and says so
   const cur = r.listAutomations(db, now)[0] as r.Automation;
   const b = r.setAutomation(db, { id: a.id, revision: cur.revision, workflowId: a.workflowId, agentId: BOUND.id, cron: cur.cron, policyVersion: 2 }, now);
+  assert.deepEqual(r.dueJobs(db, BOUND.id, T("2026-10-12T08:03:00Z")), [], "today's refused run passes the grace and is recorded missed");
   const job = r.dueJobs(db, BOUND.id, T("2026-10-13T08:00:10Z"))[0];
   assert.equal(job?.version, 2);
   assert.equal(r.claim(db, BOUND, job?.occurrence as string, T("2026-10-13T08:00:10Z")).claimed, true);
@@ -173,7 +179,8 @@ test("every claimed run is a Kanban issue assigned to the Bound agent (template 
   await call(H, "automation_delete", { id: viaOp.id, revision: viaOp.revision }, owner);
   // created a minute ago, so one occurrence is due now (handlers use the real clock)
   const set = r.setAutomation(db, { workflowId: wf, agentId: BOUND.id, cron: "* * * * *" }, Date.now() - 60_000);
-  await assert.rejects(call(H, "automation_set", { workflowId: wf, agentId: BOUND.id, cron: "* * *" }, owner), /5 cron fields/);
+  await assert.rejects(call(H, "automation_set", { workflowId: wf, agentId: BOUND.id, cron: "* * *" }, owner), /5-field cron/);
+  await assert.rejects(call(H, "automation_set", { workflowId: wf, agentId: BOUND.id, cron: "0 0 31 2 *" }, owner), /never fires/);
   await assert.rejects(call(H, "automation_set", { workflowId: "wfl_missing", agentId: BOUND.id, cron: "* * * * *" }, owner), /No workflow/);
 
   const k = kanban();

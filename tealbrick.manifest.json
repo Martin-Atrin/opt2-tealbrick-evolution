@@ -886,7 +886,7 @@
     {
       "id": "routines_due",
       "title": "Due workflow runs",
-      "description": "For a Bound agent: the scheduled runs of your workflows that are due now. Reading changes nothing; claim a run with routine_claim before you start it. Your `tealbrick agent serve` routines mode calls this for you.",
+      "description": "For a Bound agent: the scheduled runs of your workflows that are due now. Reading claims nothing (it only records runs whose due time passed the misfire grace as missed); claim a run with routine_claim before you start it. Your `tealbrick agent serve` routines mode calls this for you.",
       "input": {
         "type": "object",
         "additionalProperties": false,

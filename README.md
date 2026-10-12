@@ -54,12 +54,12 @@ reviewed guidance, not an enforced program. Temporal and the v1 step runner are 
 
 ### Schedules and runs (0.2)
 - occurrence = sha256 of `[automationId, revision, dueAt]`; the run row's primary key makes a claim at-most-once (v1 routines model).
-- Misfire grace (default 120 s): a run not claimed in time is `missed`; missed periods collapse into one record, never several runs.
+- Misfire grace (default 120 s, `cronDue`): a due time not claimed in time is recorded `missed` once, missed periods collapse into that record, and the next period runs; never a burst of catch-up runs.
 - `claimed` > 10 min or `dispatched` > 30 min without a report → `uncertain`, never offered again (a late report still closes it).
 - Following the active version: if it allows more than the version whose recipe the owner applied (`policyVersion`), claims answer `policy_stale` until the owner applies the new recipe and updates the schedule.
 - Kanban (companion `issue_create`, `issue_complete`, `issue_block`): one issue per claimed run, assigned to the Bound agent, template `evolution:<workflow id>`; the detector never suggests these. Kanban down → the run still runs (`kanbanSync: failed`).
 - Run issue project: the schedule's `kanbanProject`. Use a Kanban project the owner SHARES with the Bound agent, so the agent can read and comment on its run issues (Kanban gives shared projects to agents and to Evolution). Empty = Evolution's own Kanban project, which the agent sees only if the owner shares it. Every recipe allows `kanban.issue_get` and `kanban.issue_comment_add` for this.
-- Cron: 5 fields, UTC. `src/cron.ts` is an interim copy of the `nextCronTime(cron, after)` helper that `@opt2-tealbrick/manifest` 0.1.7 exports; it delegates to the package as soon as the export exists.
+- Cron and the due / misfire rule: `nextCronTime` and `cronDue` from `@opt2-tealbrick/manifest` 0.1.7 (5 fields, UTC; the one shared helper, no local copy). `routines_due` only records runs that passed the grace as `missed`; it never claims.
 
 ### Kanban (soft dependency)
 The manifest declares one companion: `kanban.issues_list` (read). Evolution calls it with
@@ -83,7 +83,7 @@ owner shares with it (Kanban shared projects, or projects granted to Evolution o
 | `src/model.ts` | pure rules: steps, allowlist, promotion checks, version diff |
 | `src/detector.ts` | Kanban pattern detector (harvest of the v1 evaluator) |
 | `src/recipe.ts` | Bound-agent recipe builder |
-| `src/routines.ts`, `src/cron.ts` | schedules, due/claim/report, misfire, sweep; cron helper (interim) |
+| `src/routines.ts` | schedules, due/claim/report, missed records, sweep (cron rule from the manifest package) |
 | `src/templates.ts` | seed workflow templates |
 | `src/ui/` | owner UI in `<AppShell>`: Suggestions, Drafts, Workflows, Schedules, Holds, Agents |
 | `migrations/` | `0001_init.sql` (0.1), `0002_routines.sql` (0.2); forward-only, never edit a released file |
