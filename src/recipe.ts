@@ -34,8 +34,11 @@ function clip(s: string, n: number): string {
   return s.length <= n ? s : `${s.slice(0, n - 1)}…`;
 }
 
+/** Kanban: every scheduled run is an issue assigned to the Bound agent; it reads it and comments on it there. */
+export const RUN_ISSUE_OPS: Allowed = { product: "kanban", operations: ["issue_comment_add", "issue_get"], crud: ["read", "create"] };
+
 export function boundAllowed(allowed: readonly Allowed[]): Allowed[] {
-  return normalizeAllowed([...allowed, SELF_OPS]);
+  return normalizeAllowed([...allowed, SELF_OPS, RUN_ISSUE_OPS]);
 }
 
 export function buildRecipe(
@@ -68,7 +71,7 @@ export function buildRecipe(
     format: RECIPE_FORMAT,
     title: clip(`Bound agent: ${wf.snapshot.title} v${wf.version}`, 120),
     description: clip(
-      `Creates one agent, sets it Bound and connects it to ${allowed.length} app(s). The agent may call only: ${ops}. The bridge blocks every other operation; it does not force the agent to follow the workflow steps. Trigger: ${wf.snapshot.trigger || "none set"}. Schedule it on Evolution's Schedules page after you apply this recipe.`,
+      `Creates one agent, sets it Bound and connects it to ${allowed.length} app(s). The agent may call only: ${ops}. The bridge blocks every other operation; it does not force the agent to follow the workflow steps. Trigger: ${wf.snapshot.trigger || "none set"}. Schedule it on Evolution's Schedules page after you apply this recipe; every run is a Kanban issue assigned to this agent in the project you choose there, so choose a Kanban project you share with the agent (it may read and comment on its run issues).`,
       2000,
     ),
     steps,

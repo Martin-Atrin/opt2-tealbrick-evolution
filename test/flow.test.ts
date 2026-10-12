@@ -128,7 +128,7 @@ test("owner review: decide, draft (needs approval), edit with revisions, promote
   assert.equal(policy.mode, "bound");
   assert.deepEqual(policy.workflow, [
     { product: "evolution", operations: ["routine_claim", "routine_report", "routines_due", "workflow_get"] },
-    { product: "kanban", operations: ["issue_create", "issues_list"] },
+    { product: "kanban", operations: ["issue_comment_add", "issue_create", "issue_get", "issues_list"] },
     { product: "knowledge", operations: ["remember"] },
   ]);
   assert.match(exported.notice, /may call these operations/);

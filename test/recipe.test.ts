@@ -61,7 +61,7 @@ test("steps: create the card, set it Bound with the allowlist, one edge per prod
   assert.ok(((policy?.input.held ?? []) as string[]).includes("money"), "money must be held (policy_invalid otherwise)");
   assert.deepEqual(policy?.input.workflow, [
     { product: "evolution", operations: ["routine_claim", "routine_report", "routines_due", "workflow_get"] },
-    { product: "kanban", operations: ["issue_create", "issues_list"] },
+    { product: "kanban", operations: ["issue_comment_add", "issue_create", "issue_get", "issues_list"] },
     { product: "knowledge", operations: ["remember"] },
   ]);
   assert.deepEqual(
@@ -79,4 +79,12 @@ test("defaults and limits: harness generic-mcp, long names clipped to 64", () =>
   const r = buildRecipe({ ...wf, snapshot: { ...snap, title: "x".repeat(300) } });
   assert.equal(r.steps[0]?.input.harnessOptionId, "generic-mcp");
   assert.equal(String(r.steps[0]?.input.name).length, 64);
+});
+
+test("every Bound agent may read and comment on its Kanban run issues, even when the workflow itself does not use Kanban", () => {
+  const r = buildRecipe({ ...wf, snapshot: { ...snap, allowed: normalizeAllowed([{ product: "knowledge", operations: ["remember"], crud: ["create"] }]) } });
+  const policy = r.steps[1]?.input.workflow as { product: string; operations: string[] }[];
+  assert.deepEqual(policy.find((p) => p.product === "kanban"), { product: "kanban", operations: ["issue_comment_add", "issue_get"] });
+  assert.ok(r.steps.some((s) => s.opId === "edges.create" && s.input.product === "kanban"));
+  assert.match(r.description ?? "", /share with the agent/);
 });

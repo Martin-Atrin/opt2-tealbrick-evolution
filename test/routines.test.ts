@@ -185,6 +185,7 @@ test("every claimed run is a Kanban issue assigned to the Bound agent (template 
   const c = await call<K.RoutineClaimOutput>(H, "routine_claim", { occurrence: occ }, ctxFor(db, BOUND, k.callApp));
   assert.equal(c.claimed, true);
   assert.equal(c.job?.kanbanIssueId, "iss_run1");
+  assert.equal(c.job?.kanbanProject, null, "no project chosen: Evolution's own project (shared by the owner if the agent should see it)");
   assert.equal(c.job?.kanbanTemplate, r.runTemplateKey(wf));
   assert.match(r.runTemplateKey(wf), /^[a-z0-9][a-z0-9._:-]*$/, "Kanban template key pattern");
   assert.equal(k.calls[0]?.op, "issue_create");
@@ -229,6 +230,7 @@ test("Kanban is optional for runs: a failing companion never fails the claim or 
   const occ2 = (await call<K.RoutinesDueOutput>(H, "routines_due", {}, ctxFor(db2, BOUND))).jobs[0]?.occurrence as string;
   await call(H, "routine_claim", { occurrence: occ2 }, ctxFor(db2, BOUND, up.callApp));
   assert.equal(up.calls[0]?.input.project, "prj_runs");
+  assert.equal(r.getRun(db2, occ2)?.workflowVersion, 1);
   await call(H, "routine_report", { occurrence: occ2, status: "failed", summary: "Kanban write refused" }, ctxFor(db2, BOUND, up.callApp));
   assert.deepEqual(up.calls[1], { op: "issue_block", input: { issue: "iss_run1", reason: "Run failed: Kanban write refused" }, key: `evolution-close:${occ2}:failed` });
 });

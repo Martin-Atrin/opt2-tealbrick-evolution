@@ -58,6 +58,7 @@ reviewed guidance, not an enforced program. Temporal and the v1 step runner are 
 - `claimed` > 10 min or `dispatched` > 30 min without a report → `uncertain`, never offered again (a late report still closes it).
 - Following the active version: if it allows more than the version whose recipe the owner applied (`policyVersion`), claims answer `policy_stale` until the owner applies the new recipe and updates the schedule.
 - Kanban (companion `issue_create`, `issue_complete`, `issue_block`): one issue per claimed run, assigned to the Bound agent, template `evolution:<workflow id>`; the detector never suggests these. Kanban down → the run still runs (`kanbanSync: failed`).
+- Run issue project: the schedule's `kanbanProject`. Use a Kanban project the owner SHARES with the Bound agent, so the agent can read and comment on its run issues (Kanban gives shared projects to agents and to Evolution). Empty = Evolution's own Kanban project, which the agent sees only if the owner shares it. Every recipe allows `kanban.issue_get` and `kanban.issue_comment_add` for this.
 - Cron: 5 fields, UTC. `src/cron.ts` is an interim copy of the `nextCronTime(cron, after)` helper that `@opt2-tealbrick/manifest` 0.1.7 exports; it delegates to the package as soon as the export exists.
 
 ### Kanban (soft dependency)

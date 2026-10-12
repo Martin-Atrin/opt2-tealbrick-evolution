@@ -61,7 +61,7 @@ export function Schedules() {
     <div className="tb-stack">
       <p className="tb-muted">
         A schedule runs a promoted workflow with one Bound agent. Evolution does not start the agent: the agent's own runner (
-        <code>tealbrick agent serve</code> in routines mode) asks for due runs and claims each one once. Every run is a Kanban issue assigned to the agent. Times are UTC.
+        <code>tealbrick agent serve</code> in routines mode) asks for due runs and claims each one once. Every run is a Kanban issue assigned to the agent, in the Kanban project you choose (share it with the agent). Times are UTC.
       </p>
       <section className="tb-panel tb-stack">
         <h4>New schedule</h4>
@@ -83,7 +83,10 @@ export function Schedules() {
           <Field label="Cron (UTC)" hint="minute hour day month weekday, e.g. 0 8 * * 1-5">
             <TextInput value={form.cron} onChange={(e) => setForm({ ...form, cron: e.target.value })} maxLength={120} />
           </Field>
-          <Field label="Kanban project (optional)" hint="Empty: Evolution's own project.">
+          <Field
+            label="Kanban project for run issues"
+            hint="Use a project you share with the Bound agent in Kanban (its id), so the agent can read and comment on its runs. Empty: Evolution's own project, which the agent sees only if you share it."
+          >
             <TextInput value={form.kanbanProject} onChange={(e) => setForm({ ...form, kanbanProject: e.target.value })} maxLength={64} />
           </Field>
         </div>
@@ -108,7 +111,7 @@ export function Schedules() {
               </Button>
               <Tag tone={a.enabled ? "ok" : "neutral"}>{a.enabled ? "active" : "paused"}</Tag>
               <span className="tb-muted">
-                {name(a.agentId)} · <code>{a.cron}</code> · next {when(a.effectiveNextDueAt)} · {a.versionPin ? `pinned v${a.versionPin}` : "active version"}
+                {name(a.agentId)} · <code>{a.cron}</code> · next {when(a.effectiveNextDueAt)} · {a.versionPin ? `pinned v${a.versionPin}` : "active version"} · Kanban {a.kanbanProject ?? "Evolution's own project"}
               </span>
               <span className="tb-spacer" />
               <Button size="sm" onClick={() => void act(() => person("automation_pause", { id: a.id, revision: a.revision, paused: a.enabled }))}>

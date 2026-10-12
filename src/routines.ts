@@ -327,6 +327,7 @@ export interface ClaimedJob extends Job {
   allowed: Version["allowed"];
   deadline: string;
   kanbanIssueId: string | null;
+  kanbanProject: string | null;
 }
 export type ClaimResult = { claimed: true; job: ClaimedJob; automation: Automation } | { claimed: false; reason: ClaimReason };
 
@@ -375,6 +376,7 @@ export function claim(db: Db, caller: { id: string; mode: string | null }, occur
           allowed: v.allowed,
           deadline: iso(now + DISPATCHED_TIMEOUT_MS),
           kanbanIssueId: null,
+          kanbanProject: a.kanbanProject,
         },
       };
     }
