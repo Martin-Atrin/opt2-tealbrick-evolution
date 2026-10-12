@@ -123,3 +123,74 @@ test("Kanban is a soft dependency: not deployed, refused or held → a normal an
   assert.equal((await call<K.DetectorScanOutput>(H, "detector_scan", {}, ctxFor(db, OWNER, held))).kanban, "unavailable");
   assert.equal((await call<K.ReviewSuggestionsOutput>(H, "review_suggestions", {}, ctxFor(db, OWNER))).suggestions.length, 0);
 });
+
+test("background refresh (C85): scans on a timer without an op call, never twice at once, records status; the owner op stays", async () => {
+  const { createDetectorRefresh } = await import("../src/scan.ts");
+  const db = migratedDb();
+  let calls = 0;
+  let release: () => void = () => {};
+  const gate = new Promise<void>((r) => {
+    release = r;
+  });
+  const slow: CallApp = async () => {
+    calls++;
+    await gate;
+    return { status: "ok", output: { issues: [1, 2, 3].map((n) => issue(`b${n}`, `Daily check ${n}`, AGENT_A.id)) } } as unknown as CompanionResult;
+  };
+  const warn: string[] = [];
+  const refresh = createDetectorRefresh({ firstDelayMs: 5, intervalMs: 60_000 });
+  assert.equal(await refresh.tick(), null, "not started: nothing runs");
+  refresh.start({ db, callApp: slow as never, log: { warn: (m) => warn.push(m) } });
+  const first = refresh.tick();
+  assert.equal(await refresh.tick(), null, "a second scan while one runs is skipped");
+  release();
+  const r = await first;
+  assert.equal(r?.created.length, 1);
+  assert.equal(calls, 1);
+  const status = await call<K.DetectorStatusOutput>(H, "detector_status", {}, ctxFor(db, OWNER));
+  assert.deepEqual([status.trigger, status.kanban, status.issuesSeen, status.created, status.intervalMinutes], ["background", "ok", 3, 1, 15]);
+
+  // the timer fires on its own (first delay 5 ms)
+  await new Promise((res) => setTimeout(res, 40));
+  assert.equal(calls, 2, "the scheduled first scan ran");
+  refresh.stop();
+  assert.equal(await refresh.tick(), null, "stopped: nothing runs");
+
+  // Kanban unreachable in the background: a normal answer, recorded, no warning
+  const down = createDetectorRefresh({ firstDelayMs: 60_000 });
+  down.start({ db, callApp: async () => Promise.reject(new TbError("no_bridge", "x", 503)), log: { warn: (m) => warn.push(m) } });
+  assert.equal((await down.tick())?.kanban, "unavailable");
+  down.stop();
+  assert.equal((await call<K.DetectorStatusOutput>(H, "detector_status", {}, ctxFor(db, OWNER))).kanban, "unavailable");
+  assert.deepEqual(warn, []);
+
+  // the owner op still scans on demand and is recorded as such
+  await call(H, "detector_scan", {}, ctxFor(db, OWNER, kanban([])));
+  assert.equal((await call<K.DetectorStatusOutput>(H, "detector_status", {}, ctxFor(db, OWNER))).trigger, "owner");
+});
+
+test("C88/L12: an agent never sees Kanban titles Evolution read with its own grant; the owner sees them", async () => {
+  const { DETECTOR_AGENT_TITLE } = await import("../src/app.ts");
+  const db = migratedDb();
+  const secret = [1, 2, 3].map((n) => issue(`p${n}`, `Payroll for Jane Doe ${n}`, AGENT_A.id, { project: "prj_private" }));
+  const r = await call<K.DetectorScanOutput>(H, "detector_scan", {}, ctxFor(db, OWNER, kanban(secret)));
+  const id = r.created[0]?.id as string;
+  assert.match(r.created[0]?.title ?? "", /Payroll/, "the owner (person op) sees the title");
+  const owner = await call<K.ReviewSuggestionOutput>(H, "review_suggestion", { id }, ctxFor(db, OWNER));
+  assert.match(owner.suggestion.evidence[0]?.title ?? "", /Payroll/);
+
+  const list = await call<K.SuggestionsListOutput>(H, "suggestions_list", {}, ctxFor(db, AGENT_A));
+  const got = await call<K.SuggestionGetOutput>(H, "suggestion_get", { id }, ctxFor(db, AGENT_A));
+  const seen = JSON.stringify({ list, got });
+  assert.doesNotMatch(seen, /Payroll|Jane|Doe/, "no Kanban text reaches the agent");
+  assert.equal(got.title, DETECTOR_AGENT_TITLE);
+  assert.deepEqual(got.evidence.map((e) => [e.kind, e.ref, e.title]), [
+    ["kanban_issue", "p3", null],
+    ["kanban_issue", "p2", null],
+    ["kanban_issue", "p1", null],
+  ]);
+  // an agent's own suggestion keeps its own text
+  const own = await call<K.SuggestionCreateOutput>(H, "suggestion_create", { title: "My weekly report", evidence: [{ kind: "kanban_issue", ref: "iss_9", note: "mine" }] }, ctxFor(db, AGENT_A));
+  const back = await call<K.SuggestionGetOutput>(H, "suggestion_get", { id: own.id }, ctxFor(db, AGENT_A));
+  assert.deepEqual([back.title, back.evidence[0]?.note], ["My weekly report", "mine"]);
+});

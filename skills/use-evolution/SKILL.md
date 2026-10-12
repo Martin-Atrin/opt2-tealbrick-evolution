@@ -14,7 +14,7 @@ description: When and how to suggest a workflow for repeated work, and how a Bou
 - Add `steps` if you can: a title, a short instruction, and the operations each step used (`{"product": "kanban", "operation": "issue_create"}`).
 - Always send an idempotency key with `suggestion_create`; the same key returns the first result.
 - Do not suggest one-off work, and do not put secrets or personal data in a suggestion.
-- Evolution also finds repeated work on the Kanban board by itself, but only in the projects the owner shares with Evolution. Log your work on the board so it can be found.
+- Evolution also finds repeated work on the Kanban board by itself (every 15 minutes), but only in the projects the owner shares with Evolution. Log your work on the board so it can be found. Such suggestions show you issue ids only; the owner sees the details.
 - Check the owner's decision with `evolution__suggestions_list` or `evolution__suggestion_get`. You see only your own suggestions.
 
 ## If you are a Bound agent

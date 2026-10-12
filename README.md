@@ -65,7 +65,7 @@ reviewed guidance, not an enforced program. Temporal and the v1 step runner are 
 The manifest declares one companion: `kanban.issues_list` (read). Evolution calls it with
 `{"status": "done", "limit": 200}` and reads `issues[]` with `id`, `title`, `status`, `assignee {kind, id, name}`
 (Kanban 0.1; only `kind: "agent"` counts) and, if Kanban adds one later, `template` / `templateId`. Without Kanban
-the scan answers `unavailable` and Evolution works with agent suggestions alone. Evolution sees done work only in the projects the
+the scan answers `unavailable` and Evolution works with agent suggestions alone. The scan runs in the background every 15 minutes (C85: an app-initiated companion call with Evolution's own grant, no op call) and on demand (`detector_scan`); `detector_status` shows the last result. C88/L12: what Evolution read with its own grant (Kanban titles and the text built from them) is shown only to the owner; agents see detector suggestions as fixed text plus issue ids. Evolution sees done work only in the projects the
 owner shares with it (Kanban shared projects, or projects granted to Evolution on Kanban's scopes page; decision C87).
 
 ### Recipe

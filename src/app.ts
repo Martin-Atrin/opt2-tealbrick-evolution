@@ -10,10 +10,11 @@ import { fileURLToPath } from "node:url";
 import { type AppDefinition, type Caller, type Db, defineApp, type HandlerSpec, type OpContext, type SdkAppDefinition, TbError } from "@opt2-tealbrick/miniapp-sdk";
 import type * as K from "#kit";
 import { OP, type OpId } from "#kit";
-import { buildGroups, DEFAULT_MIN_REPEATS, KANBAN, KANBAN_QUERY, parseDoneIssues, suggestionText } from "./detector.ts";
+import { DEFAULT_MIN_REPEATS, KANBAN } from "./detector.ts";
 import { ALLOWLIST_NOTICE, allowedFromSteps, diffNotice, diffSnapshots, ModelError, type Snapshot } from "./model.ts";
 import { buildRecipe } from "./recipe.ts";
 import * as routines from "./routines.ts";
+import { createDetectorRefresh, DETECTOR_REFRESH_MS, detectorStatus, scanKanban } from "./scan.ts";
 import * as store from "./store.ts";
 import { TEMPLATES } from "./templates.ts";
 
@@ -47,11 +48,17 @@ function actorOf(c: Caller): store.Actor {
   return { type: c.type, id: c.id, name: c.type === "person" ? "Owner" : c.name || c.id };
 }
 
-const DETECTOR: store.Actor = { type: "system", id: "detector", name: "Kanban detector" };
 
-export function agentName(db: Db, id: string): string {
-  const r = db.prepare("SELECT name FROM agent_names WHERE id = ?").get(id);
-  return r ? String(r.name) : id;
+// C88 / L12: data Evolution read with ITS OWN companion grant (Kanban issue titles, the text built from them) is shown
+// only to the owner (person ops). An agent sees a detector suggestion only as ids and fixed text: it may not have
+// access to the Kanban project those issues are in. Evidence an agent supplied itself carries no title anyway.
+export const DETECTOR_AGENT_TITLE = "Repeated Kanban work could become a workflow";
+export const DETECTOR_AGENT_SUMMARY =
+  "Evolution found finished Kanban work of yours that repeats. The owner reviews the details; the evidence below is listed by issue id only.";
+
+export function agentView(s: store.Suggestion): store.Suggestion {
+  const evidence = s.evidence.map((e) => ({ ...e, title: null, note: s.source === "detector" ? null : e.note }));
+  return s.source === "detector" ? { ...s, title: DETECTOR_AGENT_TITLE, summary: DETECTOR_AGENT_SUMMARY, evidence } : { ...s, evidence };
 }
 
 /** An agent sees only suggestions it made or that are about its own work. */
@@ -70,38 +77,6 @@ export function snapshotFromSuggestion(s: store.Suggestion): Snapshot {
     steps: s.steps,
     allowed: allowedFromSteps(s.steps),
   };
-}
-
-/** Kanban evidence → suggestions (person op; Kanban is optional, its absence is a normal answer). */
-export async function scanKanban(db: Db, callApp: OpContext["callApp"], minRepeats: number, now: number = Date.now()): Promise<K.DetectorScanOutput> {
-  let output: unknown;
-  try {
-    const r = await callApp(KANBAN.product, KANBAN.op, KANBAN_QUERY as unknown as K.DetectorScanInput);
-    if (r.status !== "ok") return { kanban: "unavailable", message: "Kanban held the read; approve it in Kanban, then scan again.", issuesSeen: 0, created: [], updated: [] };
-    output = r.output;
-  } catch (e) {
-    const code = e instanceof TbError ? e.code : "error";
-    return { kanban: "unavailable", message: `Kanban is not reachable (${code}). Evolution still works with suggestions from agents.`, issuesSeen: 0, created: [], updated: [] };
-  }
-  const issues = parseDoneIssues(output);
-  const created: store.SuggestionRow[] = [];
-  const updated: store.SuggestionRow[] = [];
-  db.transaction(() => {
-    for (const g of buildGroups(issues, store.coveredIssues(db))) {
-      const evidence = g.issues.map((i) => ({ kind: "kanban_issue" as const, ref: i.id, product: KANBAN.product, note: null, title: i.title }));
-      const open = store.openSuggestionForGroup(db, g.key);
-      if (open) {
-        updated.push(store.toRow(store.addEvidence(db, open.id, evidence, DETECTOR, now)));
-        store.coverIssues(db, open.id, g.issues.map((i) => i.id), now);
-      } else if (g.issues.length >= minRepeats) {
-        const text = suggestionText(g, g.issues.find((i) => i.agentName)?.agentName ?? agentName(db, g.agentId));
-        const s = store.createSuggestion(db, { ...text, source: "detector", agentId: g.agentId, createdBy: DETECTOR, evidence, steps: [], groupKey: g.key }, now);
-        store.coverIssues(db, s.id, g.issues.map((i) => i.id), now);
-        created.push(store.toRow(s));
-      }
-    }
-  });
-  return { kanban: "ok", message: null, issuesSeen: issues.length, created, updated };
 }
 
 // ── Kanban run issues (step B): Evolution records every claimed run as one Kanban issue ASSIGNED to the Bound agent
@@ -186,14 +161,14 @@ export const handlers = {
   }),
   [OP.suggestionsList]: op<K.SuggestionsListInput, K.SuggestionsListOutput>({
     async run(input, ctx) {
-      return { suggestions: store.listSuggestions(ctx.db, { status: input.status, agentId: ctx.caller.id, limit: input.limit ?? 50 }).map(store.toRow) };
+      return { suggestions: store.listSuggestions(ctx.db, { status: input.status, agentId: ctx.caller.id, limit: input.limit ?? 50 }).map((x) => store.toRow(agentView(x))) };
     },
   }),
   [OP.suggestionGet]: op<K.SuggestionGetInput, K.SuggestionGetOutput>({
     async run(input, ctx) {
       const s = store.getSuggestion(ctx.db, input.id);
       if (!visibleTo(s, ctx.caller)) throw new store.StoreError("not_found", "No suggestion with this id.");
-      return s;
+      return agentView(s);
     },
   }),
   [OP.workflowGet]: op<K.WorkflowGetInput, K.WorkflowGetOutput>({
@@ -256,7 +231,12 @@ export const handlers = {
   [OP.detectorScan]: op<K.DetectorScanInput, K.DetectorScanOutput>({
     redact: (_input, output) => (output ? `Kanban scan: ${output.kanban}, ${output.created.length} new, ${output.updated.length} updated` : "Kanban scan"),
     async run(input, ctx) {
-      return scanKanban(ctx.db, ctx.callApp.bind(ctx), input.minRepeats ?? DEFAULT_MIN_REPEATS);
+      return scanKanban(ctx.db, ctx.callApp.bind(ctx), input.minRepeats ?? DEFAULT_MIN_REPEATS, "owner");
+    },
+  }),
+  [OP.detectorStatus]: op<K.DetectorStatusInput, K.DetectorStatusOutput>({
+    async run(_input, ctx) {
+      return { ...detectorStatus(ctx.db), intervalMinutes: DETECTOR_REFRESH_MS / 60_000 };
     },
   }),
   [OP.templatesList]: op<K.TemplatesListInput, K.TemplatesListOutput>({
@@ -371,10 +351,17 @@ function draftRow(d: store.Draft): K.DraftsListOutput["drafts"][number] {
   return { id: d.id, title: d.title, state: d.state, revision: d.revision, workflowId: d.workflowId, suggestionId: d.suggestionId, updatedAt: d.updatedAt };
 }
 
+/** The one background detector of this process (started by onStart, stopped with the app). */
+export const detectorRefresh = createDetectorRefresh();
+
 export const definition: SdkAppDefinition = {
   manifest,
   handlers,
   migrations: migrationsDir,
+  // C85: the Kanban scan runs without an op call (app-initiated companion call with Evolution's own grant).
+  async onStart(ctx) {
+    detectorRefresh.start({ db: ctx.db, callApp: ctx.callApp.bind(ctx), log: ctx.log });
+  },
   events: {
     // Agent directory (manifest needsAgentDirectory): keep names so suggestion text can say who repeated the work.
     async agentAdded(agent, ctx) {

@@ -5,7 +5,7 @@
   "name": "Evolution",
   "summary": "Evolution turns work your agents repeat into reviewed, versioned workflows that a Bound agent runs on a schedule.",
   "description": "Agents suggest a workflow when they repeat work, with evidence. Evolution also spots repeated done issues in Kanban. You review each suggestion, edit a draft (steps, allowed operations, trigger), promote it to a versioned workflow, export a recipe that creates a Bound agent in Portal, and schedule it. The Bound agent's own runner claims each due run at most once; every run is a Kanban issue assigned to that agent. A Bound agent may call only the allowed operations; it is not forced to follow the steps.",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "sdkMajor": 1,
   "publisher": {
     "name": "Teal Brick opt2"
@@ -1997,7 +1997,7 @@
     {
       "id": "detector_scan",
       "title": "Scan Kanban for repeated work",
-      "description": "Read done Kanban issues and suggest a workflow for work one agent repeated at least minRepeats times.",
+      "description": "Read done Kanban issues now and suggest work one agent repeated at least minRepeats times. Evolution also does this in the background every 15 minutes. It reads only the projects you share with Evolution in Kanban.",
       "input": {
         "type": "object",
         "additionalProperties": false,
@@ -2159,6 +2159,99 @@
       "effect": "write",
       "idempotency": "required",
       "receipt": true,
+      "audience": "person"
+    },
+    {
+      "id": "detector_status",
+      "title": "Kanban scan status",
+      "description": "When Evolution last read Kanban for repeated work (in the background every 15 minutes, or when you scan), and what it found.",
+      "input": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "output": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "lastScanAt",
+          "trigger",
+          "kanban",
+          "message",
+          "issuesSeen",
+          "created",
+          "updated",
+          "intervalMinutes"
+        ],
+        "properties": {
+          "lastScanAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "trigger": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "background",
+                  "owner"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "kanban": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "ok",
+                  "unavailable"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "issuesSeen": {
+            "type": "integer"
+          },
+          "created": {
+            "type": "integer"
+          },
+          "updated": {
+            "type": "integer"
+          },
+          "intervalMinutes": {
+            "type": "integer"
+          }
+        }
+      },
+      "crud": [
+        "read"
+      ],
+      "effect": "read",
+      "idempotency": "none",
+      "receipt": false,
       "audience": "person"
     },
     {

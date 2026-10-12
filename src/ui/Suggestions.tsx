@@ -13,10 +13,12 @@ export function Suggestions({ names, onDraft }: { names: (id: string | null) => 
   const [selected, setSelected] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [scanStatus, setScanStatus] = useState<Out<"detector_status"> | null>(null);
 
   const load = useCallback(async () => {
     const out = await person("review_suggestions", filter === "all" ? {} : { status: filter });
     setRows(out.suggestions);
+    setScanStatus(await person("detector_status", {}));
   }, [filter]);
   useEffect(() => {
     load().catch((e) => setNotice(errorText(e)));
@@ -63,6 +65,15 @@ export function Suggestions({ names, onDraft }: { names: (id: string | null) => 
           {busy ? "Scanning" : "Scan Kanban"}
         </Button>
       </div>
+      {scanStatus ? (
+        <p className="tb-muted">
+          {scanStatus.lastScanAt
+            ? `Kanban last read ${new Date(scanStatus.lastScanAt).toLocaleString()} (${scanStatus.trigger === "owner" ? "by you" : "in the background"}): ${
+                scanStatus.kanban === "ok" ? `${scanStatus.issuesSeen} done issues, ${scanStatus.created} new suggestion(s)` : (scanStatus.message ?? "not available")
+              }. Evolution reads Kanban every ${scanStatus.intervalMinutes} minutes.`
+            : `Evolution reads Kanban every ${scanStatus.intervalMinutes} minutes; no scan yet.`}
+        </p>
+      ) : null}
       {notice ? <Notice role="status">{notice}</Notice> : null}
       {rows.length === 0 ? <p>No suggestions here.</p> : null}
       <ul className="tb-stack" style={{ listStyle: "none", padding: 0 }}>

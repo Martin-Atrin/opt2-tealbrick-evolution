@@ -5,14 +5,17 @@
 // hands them to startApp, so the key-set checks (A13) run against test roots. Production never reads that variable.
 // TB_DATA_EPHEMERAL=1 (C80): the suite's data dir is a temp folder, not a mount point; only tests may say so.
 import { startApp } from "@opt2-tealbrick/miniapp-sdk";
-import { app, manifest } from "./src/app.ts";
+import { app, detectorRefresh, manifest } from "./src/app.ts";
 
 export default async function start(env: Record<string, string>): Promise<{ url: string; stop(): Promise<void>; backupNow(): Promise<void> }> {
   const harness = env.TBCONF_PORTAL_ROOT_KEYS ? ({ portalRootKeys: JSON.parse(env.TBCONF_PORTAL_ROOT_KEYS) } as Parameters<typeof startApp>[2]) : undefined;
   const running = await startApp(app, { TB_DATA_EPHEMERAL: "1", ...env }, harness);
   return {
     url: `http://127.0.0.1:${manifest.runtime.port}`,
-    stop: () => running.stop(),
+    stop: () => {
+      detectorRefresh.stop();
+      return running.stop();
+    },
     backupNow: async () => {
       await running.backups.runNow();
     },
