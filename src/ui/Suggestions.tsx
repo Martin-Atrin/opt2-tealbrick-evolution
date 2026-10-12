@@ -42,8 +42,8 @@ export function Suggestions({ names, onDraft }: { names: (id: string | null) => 
   return (
     <div className="tb-stack">
       <p className="tb-muted">
-        Agents suggest a workflow when they repeat work. Evolution also reads done Kanban issues and suggests work that one agent finished at least three times. Nothing runs until you
-        review it.
+        Agents suggest a workflow when they repeat work. Evolution also reads done Kanban issues and suggests work that one agent finished at least three times. Evolution sees done
+        work only in the projects you share with it in Kanban (shared projects, or projects you grant to Evolution on Kanban's scopes page). Nothing runs until you review it.
       </p>
       <div className="tb-row">
         <Tabs<Filter>

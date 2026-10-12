@@ -49,7 +49,8 @@ reviewed guidance, not an enforced program. Temporal and the v1 step runner are 
 The manifest declares one companion: `kanban.issues_list` (read). Evolution calls it with
 `{"status": "done", "limit": 200}` and reads `issues[]` with `id`, `title`, `status`, `assignee {kind, id, name}`
 (Kanban 0.1; only `kind: "agent"` counts) and, if Kanban adds one later, `template` / `templateId`. Without Kanban
-the scan answers `unavailable` and Evolution works with agent suggestions alone.
+the scan answers `unavailable` and Evolution works with agent suggestions alone. Evolution sees done work only in the projects the
+owner shares with it (Kanban shared projects, or projects granted to Evolution on Kanban's scopes page; decision C87).
 
 ### Recipe
 `recipe_export` emits a `tealbrick.recipe/1` (PORTAL-API §3) with no `ws` and no concrete Portal id (`$ref` to step
