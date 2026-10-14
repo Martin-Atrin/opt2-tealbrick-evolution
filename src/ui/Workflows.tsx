@@ -1,15 +1,20 @@
 // Workflows page: permanent workflows, their versions, the diff between two versions, and the Bound-agent recipe.
+import { HARNESS_OPTION_IDS, type HarnessOptionId } from "@opt2-tealbrick/spec/routes";
 import { Button, CopyBlock, Field, Notice, Select, Tag, TextInput } from "@opt2-tealbrick/ui";
 import { useCallback, useEffect, useState } from "react";
 import { ALLOWLIST_TEXT, errorText, type Out, person } from "./ops.ts";
 
-const HARNESSES = [
-  { value: "generic-mcp", label: "Other agent (MCP)" },
-  { value: "claude-desktop", label: "Claude Desktop" },
-  { value: "codex-desktop", label: "Codex" },
-  { value: "eve", label: "Eve agent" },
-  { value: "tbd-default", label: "Teal Brick desktop app" },
-];
+/** EVO-01: one label per spec harness option id (HARNESS_OPTION_IDS); a new id fails the typecheck until it has a label. */
+const HARNESS_LABELS: Record<HarnessOptionId, string> = {
+  "generic-mcp": "Other agent (MCP)",
+  "claude-desktop": "Claude Desktop",
+  "claude-code": "Claude Code",
+  "codex-desktop": "Codex",
+  eve: "Eve agent",
+  "tbd-default": "Teal Brick desktop app",
+  "tealbrick-cli": "Teal Brick command line",
+};
+const HARNESSES = HARNESS_OPTION_IDS.map((value) => ({ value, label: HARNESS_LABELS[value] })).sort((a, b) => (a.value === "generic-mcp" ? -1 : b.value === "generic-mcp" ? 1 : 0));
 
 export function Workflows({ openId }: { openId: string | null }) {
   const [rows, setRows] = useState<Out<"workflows_list">["workflows"]>([]);

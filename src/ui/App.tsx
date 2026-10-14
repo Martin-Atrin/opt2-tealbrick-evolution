@@ -4,6 +4,7 @@ import { useAgents, useHolds, useSession } from "@opt2-tealbrick/miniapp-sdk/cli
 import { AppShell, Button, Notice, STANDARD_PAGES, Tag } from "@opt2-tealbrick/ui";
 import { useEffect, useState } from "react";
 import { Drafts } from "./Drafts.tsx";
+import { decideOrError } from "./ops.ts";
 import { Schedules } from "./Schedules.tsx";
 import { Suggestions } from "./Suggestions.tsx";
 import { Workflows } from "./Workflows.tsx";
@@ -26,21 +27,38 @@ function pageOf(pathname: string): string {
 
 function Holds() {
   const { holds, loading, decide } = useHolds({ status: "held" });
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
   if (loading) return <p>Loading holds.</p>;
-  if (holds.length === 0) return <p>No calls wait for your approval.</p>;
+  const act = async (id: string, decision: "approve" | "deny") => {
+    setBusy(id);
+    setError(null);
+    setError(await decideOrError(decide, id, decision));
+    setBusy(null);
+  };
   return (
-    <ul>
-      {holds.map((h) => (
-        <li key={h.id}>
-          <strong>{h.caller.name}</strong> {h.summary} <Tag tone="action">{h.op}</Tag>
-          {h.view ? <pre>{h.view}</pre> : null}
-          <Button variant="primary" onClick={() => void decide(h.id as Parameters<typeof decide>[0], "approve")}>
-            Approve
-          </Button>{" "}
-          <Button onClick={() => void decide(h.id as Parameters<typeof decide>[0], "deny")}>Deny</Button>
-        </li>
-      ))}
-    </ul>
+    <>
+      {error ? (
+        <Notice tone="action" role="alert">
+          {error}
+        </Notice>
+      ) : null}
+      {holds.length === 0 ? <p>No calls wait for your approval.</p> : null}
+      <ul>
+        {holds.map((h) => (
+          <li key={h.id}>
+            <strong>{h.caller.name}</strong> {h.summary} <Tag tone="action">{h.op}</Tag>
+            {h.view ? <pre>{h.view}</pre> : null}
+            <Button variant="primary" disabled={busy === h.id} onClick={() => void act(h.id, "approve")}>
+              Approve
+            </Button>{" "}
+            <Button disabled={busy === h.id} onClick={() => void act(h.id, "deny")}>
+              Deny
+            </Button>
+          </li>
+        ))}
+      </ul>
+    </>
   );
 }
 

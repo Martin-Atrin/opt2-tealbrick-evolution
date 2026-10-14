@@ -4,28 +4,43 @@
 //   1 agents.policy_set  mode bound, workflow = the allowed operations per product (grant `wf`), held + caps
 //   2… edges.create      one agent→app edge per product, CRUD = the access the workflow needs
 // Every id is a `$ref` to step 0's output; `ws` is absent (import fills it). Core refuses any other concrete id.
+// EVO-01 (L1): the held families and harness ids come from the shared packages, never retyped here.
+import { DEFAULT_HELD_FAMILIES } from "@opt2-tealbrick/manifest";
+import { HARNESS_OPTION_IDS, type HarnessOptionId, type Recipe as SpecRecipe } from "@opt2-tealbrick/spec/routes";
 import type { Allowed, Crud, Snapshot } from "./model.ts";
-import { normalizeAllowed } from "./model.ts";
+import { ModelError, normalizeAllowed } from "./model.ts";
 
-export const RECIPE_FORMAT = "tealbrick.recipe/1";
+export const RECIPE_FORMAT: SpecRecipe["format"] = "tealbrick.recipe/1";
 /** Evolution itself: a Bound agent reads its workflow and claims/reports its scheduled runs. */
 export const SELF_OPS: Allowed = { product: "evolution", operations: ["routine_claim", "routine_report", "routines_due", "workflow_get"], crud: ["read", "update"] };
 /** A new card's policy revision in Core (agent_policies.revision starts at 1). */
 export const NEW_POLICY_REVISION = 1;
-/** Core defaults for a new card (PORTAL-API §2.1 Agent Policy); the owner can tighten them in Portal. */
-export const DEFAULT_HELD = ["destructive", "money"] as const;
+/** The held families of a new card (spec DEFAULT_HELD_FAMILIES, C105/C107): a recipe never holds less than a new agent. */
+export const DEFAULT_HELD = DEFAULT_HELD_FAMILIES;
+/**
+ * Core's new-card caps (portal-core registries/agents.ts DEFAULT_CAPS). Not in the spec yet: REQUESTS SPEC-1 asks for
+ * one shared constant; replace this copy with the import when it ships.
+ */
 export const DEFAULT_CAPS = { write: { max: 500, per: "hour" }, outward: { max: 30, per: "hour" }, destructive: { max: 20, per: "day" } } as const;
-export const DEFAULT_HARNESS = "generic-mcp";
+export const DEFAULT_HARNESS: HarnessOptionId = "generic-mcp";
 
 export interface RecipeStep {
   opId: "agents.create" | "agents.policy_set" | "edges.create";
   input: Record<string, unknown>;
 }
-export interface Recipe {
-  format: typeof RECIPE_FORMAT;
-  title: string;
-  description: string | null;
+/** The spec's exported recipe (PORTAL-API §3) with Evolution's three step kinds. */
+export interface Recipe extends Omit<SpecRecipe, "steps"> {
   steps: RecipeStep[];
+}
+// compile-time check: an Evolution recipe is a spec Recipe
+const _isSpecRecipe = (r: Recipe): SpecRecipe => r;
+void _isSpecRecipe;
+
+/** A harness option id the spec knows (HARNESS_OPTION_IDS); anything else is refused before Core sees it. */
+export function harnessOption(id: string | undefined): HarnessOptionId {
+  if (id === undefined) return DEFAULT_HARNESS;
+  if (!(HARNESS_OPTION_IDS as readonly string[]).includes(id)) throw new ModelError(`Unknown harness "${id}". Use one of: ${HARNESS_OPTION_IDS.join(", ")}.`, "/harnessOptionId");
+  return id as HarnessOptionId;
 }
 
 const AGENT_REF = { $ref: "#/steps/0/output/id" } as const;
@@ -52,7 +67,7 @@ export function buildRecipe(
     500,
   );
   const steps: RecipeStep[] = [
-    { opId: "agents.create", input: { name, purpose, harnessOptionId: opts.harnessOptionId ?? DEFAULT_HARNESS } },
+    { opId: "agents.create", input: { name, purpose, harnessOptionId: harnessOption(opts.harnessOptionId) } },
     {
       opId: "agents.policy_set",
       input: {

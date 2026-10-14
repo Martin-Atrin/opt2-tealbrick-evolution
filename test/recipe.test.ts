@@ -3,8 +3,9 @@
 // match AgentCreateInput / AgentPolicySetInput / EdgeCreateInput (field names and the new-card policy revision 1).
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { ROUTES } from "@opt2-tealbrick/spec/routes";
-import { normalizeAllowed, type Snapshot } from "../src/model.ts";
+import { DEFAULT_HELD_FAMILIES } from "@opt2-tealbrick/spec/manifest";
+import { HARNESS_OPTION_IDS, ROUTES } from "@opt2-tealbrick/spec/routes";
+import { ModelError, normalizeAllowed, type Snapshot } from "../src/model.ts";
 import { buildRecipe, nonPortable, type Recipe } from "../src/recipe.ts";
 
 const snap: Snapshot = {
@@ -58,7 +59,8 @@ test("steps: create the card, set it Bound with the allowlist, one edge per prod
   assert.deepEqual(policy?.input.agt, { $ref: "#/steps/0/output/id" });
   assert.equal(policy?.input.revision, 1, "a new card's policy revision");
   assert.equal(policy?.input.mode, "bound");
-  assert.ok(((policy?.input.held ?? []) as string[]).includes("money"), "money must be held (policy_invalid otherwise)");
+  // EVO-01: exactly the spec's new-card families (first_contact and identity included), not a local subset
+  assert.deepEqual(policy?.input.held, [...DEFAULT_HELD_FAMILIES]);
   assert.deepEqual(policy?.input.workflow, [
     { product: "evolution", operations: ["routine_claim", "routine_report", "routines_due", "workflow_get"] },
     { product: "kanban", operations: ["issue_comment_add", "issue_create", "issue_get", "issues_list"] },
@@ -87,4 +89,14 @@ test("every Bound agent may read and comment on its Kanban run issues, even when
   assert.deepEqual(policy.find((p) => p.product === "kanban"), { product: "kanban", operations: ["issue_comment_add", "issue_get"] });
   assert.ok(r.steps.some((s) => s.opId === "edges.create" && s.input.product === "kanban"));
   assert.match(r.description ?? "", /share with the agent/);
+});
+
+test("EVO-01 fires: a recipe never holds less than a new card; unknown harness ids are refused", () => {
+  const held = buildRecipe(wf).steps[1]?.input.held as string[];
+  for (const family of ["destructive", "money", "first_contact", "identity"]) assert.ok(held.includes(family), family);
+  assert.throws(() => buildRecipe(wf, { harnessOptionId: "claude-sdk" }), (e: unknown) => e instanceof ModelError && /Unknown harness/u.test(e.message));
+});
+
+test("EVO-01 quiet: every spec harness option id is accepted as given", () => {
+  for (const id of HARNESS_OPTION_IDS) assert.equal(buildRecipe(wf, { harnessOptionId: id }).steps[0]?.input.harnessOptionId, id);
 });
