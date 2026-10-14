@@ -280,7 +280,7 @@ function Detail({
           {d.drafts.length ? <p className="tb-hint">Drafts from this suggestion: {d.drafts.map((x) => `${x.title} (${x.state === "promoted" ? "promoted" : "editing"})`).join(", ")}</p> : null}
           <details className="history">
             <summary>History</summary>
-            <ul>
+            <ul className="tb-list">
               {d.events.map((e) => (
                 <li key={`${e.at}${e.type}`}>
                   {stamp(e.at)}: {e.type} by {e.actor.type === "agent" ? names(e.actor.id) : e.actor.name}
