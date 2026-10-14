@@ -41,3 +41,4 @@
 @media (max-width: 960px) { .two-pane { grid-template-columns: 1fr; } .three { grid-template-columns: 1fr; } }
 @media (max-width: 720px) { .two { grid-template-columns: 1fr; } }
 .detail .toolbar .tb-select { width: 220px; max-width: 100%; }
+.app-page > .toolbar .tb-field { width: 280px; max-width: 100%; }
