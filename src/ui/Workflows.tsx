@@ -1,7 +1,7 @@
 // Workflows page: permanent workflows, their versions, the diff between two versions, and the Bound-agent recipe.
 import { HARNESS_OPTION_IDS, type HarnessOptionId } from "@opt2-tealbrick/spec/routes";
-import { Button, CopyBlock, Field, Notice, Select, Tag, TextInput } from "@opt2-tealbrick/ui";
-import { useCallback, useEffect, useState } from "react";
+import { appName, Button, CopyBlock, EmptyState, Field, Ink, Notice, Select, Tag, TextInput } from "@opt2-tealbrick/ui";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import { ALLOWLIST_TEXT, errorText, type Out, person } from "./ops.ts";
 
 /** EVO-01: one label per spec harness option id (HARNESS_OPTION_IDS); a new id fails the typecheck until it has a label. */
@@ -11,42 +11,67 @@ const HARNESS_LABELS: Record<HarnessOptionId, string> = {
   "claude-code": "Claude Code",
   "codex-desktop": "Codex",
   eve: "Eve agent",
-  "tbd-default": "Teal Brick desktop app",
-  "tealbrick-cli": "Teal Brick command line",
+  "tbd-default": "Tealbrick desktop app",
+  "tealbrick-cli": "Tealbrick command line",
 };
 const HARNESSES = HARNESS_OPTION_IDS.map((value) => ({ value, label: HARNESS_LABELS[value] })).sort((a, b) => (a.value === "generic-mcp" ? -1 : b.value === "generic-mcp" ? 1 : 0));
+const opsOf = (ops: { product: string; operation: string }[]) => ops.map((o) => `${o.product}.${o.operation}`).join(", ");
 
 export function Workflows({ openId }: { openId: string | null }) {
-  const [rows, setRows] = useState<Out<"workflows_list">["workflows"]>([]);
+  const [rows, setRows] = useState<Out<"workflows_list">["workflows"] | null>(null);
   const [selected, setSelected] = useState<string | null>(openId);
   const [error, setError] = useState<string | null>(null);
-  useEffect(() => {
+  const load = useCallback(() => {
     person("workflows_list", {})
-      .then((r) => setRows(r.workflows))
+      .then((r) => {
+        setRows(r.workflows);
+        setError(null);
+      })
       .catch((e) => setError(errorText(e)));
   }, []);
+  useEffect(load, [load]);
   useEffect(() => setSelected(openId), [openId]);
+  const current = selected ?? rows?.[0]?.id ?? null;
   return (
-    <div className="tb-stack">
-      <p className="tb-muted">A workflow is a promoted draft. Each promotion is a new version; old versions stay readable.</p>
+    <section className="app-page" aria-label="Workflows">
+      <div className="page-head">
+        <div className="tb-stack">
+          <h1>Workflows</h1>
+          <p className="tb-lede">A workflow is a promoted draft. Each promotion is a new version; old versions stay readable.</p>
+        </div>
+      </div>
       {error ? (
-        <Notice tone="action" role="alert">
-          {error}
+        <Notice tone="needs-you" role="alert">
+          <span className="tb-row">
+            <span>{error}</span>
+            <Button size="sm" onClick={load}>
+              Try again
+            </Button>
+          </span>
         </Notice>
       ) : null}
-      {rows.length === 0 ? <p>No workflows yet. Promote a draft first.</p> : null}
-      <ul className="tb-stack" style={{ listStyle: "none", padding: 0 }}>
-        {rows.map((w) => (
-          <li key={w.id} className="tb-panel">
-            <Button variant="ghost" onClick={() => setSelected(selected === w.id ? null : w.id)} aria-expanded={selected === w.id}>
-              <strong>{w.title}</strong>
-            </Button>{" "}
-            <Tag tone="ok">v{w.activeVersion}</Tag> <code className="tb-muted">{w.id}</code>
-            {selected === w.id ? <Detail id={w.id} /> : null}
-          </li>
-        ))}
-      </ul>
-    </div>
+      {rows === null ? (
+        error ? null : (
+          <p className="tb-soft" role="status">
+            Loading workflows.
+          </p>
+        )
+      ) : rows.length === 0 ? (
+        <EmptyState title="No workflows yet.">Promote a draft first.</EmptyState>
+      ) : (
+        <div className="two-pane">
+          <nav className="pane-list" aria-label="Workflows">
+            {rows.map((w) => (
+              <button type="button" key={w.id} className="pane-item tb-focusable" aria-current={current === w.id ? "true" : undefined} onClick={() => setSelected(w.id)}>
+                <Ink>{w.title}</Ink>
+                <Tag status="live">{`v${w.activeVersion}`}</Tag>
+              </button>
+            ))}
+          </nav>
+          {current ? <Detail key={current} id={current} /> : null}
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -71,7 +96,16 @@ function Detail({ id }: { id: string }) {
   useEffect(() => {
     load().catch((e) => setError(errorText(e)));
   }, [load]);
-  if (!data) return <p>{error ?? "Loading."}</p>;
+  if (!data)
+    return error ? (
+      <Notice tone="needs-you" role="alert">
+        {error}
+      </Notice>
+    ) : (
+      <p className="tb-soft" role="status">
+        Loading.
+      </p>
+    );
   const v = data.versions.find((x) => x.version === shown) ?? data.versions.at(-1);
   if (!v) return null;
   const options = data.versions.map((x) => ({ value: String(x.version), label: `v${x.version} (${new Date(x.promotedAt).toLocaleDateString()})` }));
@@ -79,6 +113,7 @@ function Detail({ id }: { id: string }) {
   const compare = async () => {
     try {
       setDiff(await person("workflow_diff", { workflowId: id, from, to }));
+      setError(null);
     } catch (e) {
       setError(errorText(e));
     }
@@ -86,6 +121,7 @@ function Detail({ id }: { id: string }) {
   const exportRecipe = async () => {
     try {
       setRecipe(await person("recipe_export", { workflowId: id, version: v.version, harnessOptionId: harness, ...(agentName.trim() ? { agentName: agentName.trim() } : {}) }));
+      setError(null);
     } catch (e) {
       setError(errorText(e));
     }
@@ -99,50 +135,68 @@ function Detail({ id }: { id: string }) {
     a.click();
     URL.revokeObjectURL(url);
   };
+  const changes = diff
+    ? diff.fields.length + diff.steps.added.length + diff.steps.removed.length + diff.steps.changed.length + diff.operations.added.length + diff.operations.removed.length
+    : 0;
 
   return (
-    <div className="tb-stack" style={{ marginTop: 12 }}>
-      <Field label="Version">
-        <Select value={String(v.version)} onChange={(e) => setShown(Number(e.target.value))} options={options} />
-      </Field>
-      <p>{v.instruction}</p>
-      <p className="tb-muted">Trigger: {v.trigger || "none set"}. Schedule runs on the Schedules page.</p>
+    <article className="tb-card detail">
+      <div className="detail-head">
+        <h2>{data.workflow.title}</h2>
+        <Field label="Version">
+          <Select value={String(v.version)} onValueChange={(x) => setShown(Number(x))} options={options} />
+        </Field>
+      </div>
+      <p className="tb-soft">{v.instruction}</p>
+      <p className="tb-hint">Trigger: {v.trigger || "none set"}. Schedule runs on the Schedules page.</p>
       {v.steps.length ? (
-        <ol>
+        <ol className="steps-list">
           {v.steps.map((s) => (
             <li key={s.id}>
-              <strong>{s.title}</strong>
-              {s.instruction ? ` — ${s.instruction}` : ""}
-              {s.ops.length ? <span className="tb-muted"> ({s.ops.map((o) => `${o.product}.${o.operation}`).join(", ")})</span> : null}
+              <b>{s.title}</b>
+              <span>
+                {s.instruction}
+                {s.ops.length ? <span className="code-ops"> ({opsOf(s.ops)})</span> : null}
+              </span>
             </li>
           ))}
         </ol>
       ) : null}
-      <h4>Allowed operations</h4>
-      <Notice role="status">{ALLOWLIST_TEXT}</Notice>
-      <ul>
-        {v.allowed.map((a) => (
-          <li key={a.product}>
-            <strong>{a.product}</strong>: {a.operations.join(", ")} <span className="tb-muted">(access {a.crud.join("/")})</span>
-          </li>
-        ))}
-      </ul>
+
+      <section className="tb-section">
+        <h3>Allowed operations</h3>
+        <Notice role="status">{ALLOWLIST_TEXT}</Notice>
+        <dl className="kv">
+          {v.allowed.map((a) => (
+            <Fragment key={a.product}>
+              <dt>{appName(a.product)}</dt>
+              <dd className="code-ops">
+                {a.operations.join(", ")} ({a.crud.join(", ")})
+              </dd>
+            </Fragment>
+          ))}
+        </dl>
+      </section>
 
       {data.versions.length > 1 ? (
-        <section className="tb-stack">
-          <h4>Compare versions</h4>
-          <div className="tb-row">
-            <Select aria-label="From version" value={String(from)} onChange={(e) => setFrom(Number(e.target.value))} options={options} />
-            <Select aria-label="To version" value={String(to)} onChange={(e) => setTo(Number(e.target.value))} options={options} />
+        <section className="tb-section">
+          <h3>Compare versions</h3>
+          <div className="toolbar">
+            <Select aria-label="From version" value={String(from)} onValueChange={(x) => setFrom(Number(x))} options={options} />
+            <Select aria-label="To version" value={String(to)} onValueChange={(x) => setTo(Number(x))} options={options} />
             <Button onClick={() => void compare()}>Compare</Button>
           </div>
           {diff ? (
-            <div className="tb-stack">
-              {diff.widensAccess ? <Tag tone="action">allows more</Tag> : null}
-              <ul>
+            <div className="tb-stack diff">
+              {diff.widensAccess ? (
+                <Notice tone="needs-you">
+                  <strong>This version allows more than the previous one.</strong> {diff.notice}
+                </Notice>
+              ) : null}
+              <ul className="plain">
                 {diff.fields.map((f) => (
                   <li key={f.field}>
-                    {f.field} changed: <del>{f.from || "(empty)"}</del> → <ins>{f.to || "(empty)"}</ins>
+                    {f.field} changed: <del>{f.from || "(empty)"}</del> to <ins>{f.to || "(empty)"}</ins>
                   </li>
                 ))}
                 {diff.steps.added.map((s) => (
@@ -163,30 +217,28 @@ function Detail({ id }: { id: string }) {
                   <li key={`or${o}`}>Operation removed: {o}</li>
                 ))}
               </ul>
-              {diff.fields.length + diff.steps.added.length + diff.steps.removed.length + diff.steps.changed.length + diff.operations.added.length + diff.operations.removed.length === 0 ? (
-                <p>No differences.</p>
-              ) : null}
-              <p className="tb-muted">{diff.notice}</p>
+              {changes === 0 ? <p className="tb-soft">No differences.</p> : null}
+              {diff.widensAccess ? null : <p className="tb-hint">{diff.notice}</p>}
             </div>
           ) : null}
         </section>
       ) : null}
 
-      <section className="tb-stack">
-        <h4>Bound agent recipe (version {v.version})</h4>
-        <p className="tb-muted">
+      <section className="tb-section">
+        <h3>Bound agent recipe (version {v.version})</h3>
+        <p className="tb-soft">
           The recipe creates a new agent in Portal, sets it Bound with the operations above, and connects it to each app. You import it in Portal and apply it with one
           confirmation. Nothing is created from here.
         </p>
-        <div className="tb-row">
+        <div className="two">
           <Field label="Agent name">
             <TextInput value={agentName} placeholder={`${data.workflow.title} (Bound)`} onChange={(e) => setAgentName(e.target.value)} maxLength={64} />
           </Field>
           <Field label="Runs in">
-            <Select value={harness} onChange={(e) => setHarness(e.target.value)} options={HARNESSES} />
+            <Select value={harness} onValueChange={setHarness} options={HARNESSES} />
           </Field>
         </div>
-        <div className="tb-row">
+        <div className="tb-ctas">
           <Button variant="primary" onClick={() => void exportRecipe()}>
             Export recipe
           </Button>
@@ -195,15 +247,15 @@ function Detail({ id }: { id: string }) {
         {recipe ? (
           <>
             <Notice role="status">{recipe.notice}</Notice>
-            <CopyBlock text={JSON.stringify(recipe.recipe, null, 2)} label="Copy recipe" />
+            <CopyBlock text={JSON.stringify(recipe.recipe, null, 2)} label="recipe" />
           </>
         ) : null}
       </section>
       {error ? (
-        <Notice tone="action" role="alert">
+        <Notice tone="needs-you" role="alert">
           {error}
         </Notice>
       ) : null}
-    </div>
+    </article>
   );
 }

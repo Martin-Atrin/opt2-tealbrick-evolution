@@ -1,190 +1,296 @@
-// Suggestions page: review what agents (and the Kanban detector) suggest; decide; start a draft from an approved one.
-import { Button, Field, Notice, Tabs, Tag, TextInput } from "@opt2-tealbrick/ui";
+// Suggestions page: review what agents (and the Task Board detector) suggest; decide; start a draft from an approved one.
+import { appName, Button, Chip, ChipGroup, Dialog, EmptyState, Field, Notice, type Status, Swatch, Tag, TextInput } from "@opt2-tealbrick/ui";
 import { useCallback, useEffect, useState } from "react";
 import { errorText, type Out, person } from "./ops.ts";
 
-type Status = "open" | "approved" | "rejected" | "archived";
-type Filter = Status | "all";
-const TONE: Record<Status, "action" | "ok" | "blocked" | "neutral"> = { open: "action", approved: "ok", rejected: "blocked", archived: "neutral" };
+type SuggestionStatus = "open" | "approved" | "rejected" | "archived";
+type Filter = SuggestionStatus | "all";
+const FILTERS: { value: Filter; label: string }[] = [
+  { value: "open", label: "To review" },
+  { value: "approved", label: "Approved" },
+  { value: "rejected", label: "Rejected" },
+  { value: "archived", label: "Archived" },
+  { value: "all", label: "All" },
+];
+const STATUS: Record<SuggestionStatus, { status: Status; label: string }> = {
+  open: { status: "busy", label: "To review" },
+  approved: { status: "live", label: "Approved" },
+  rejected: { status: "needs-you", label: "Rejected" },
+  archived: { status: "default", label: "Archived" },
+};
+const day = (iso: string) => new Date(iso).toLocaleDateString();
+const stamp = (iso: string) => new Date(iso).toLocaleString();
+const opsOf = (ops: { product: string; operation: string }[]) => ops.map((o) => `${o.product}.${o.operation}`).join(", ");
 
-export function Suggestions({ names, onDraft }: { names: (id: string | null) => string; onDraft: (draftId: string) => void }) {
+export function Suggestions({
+  names,
+  onDraft,
+  onOpenCount,
+}: {
+  names: (id: string | null) => string;
+  onDraft: (draftId: string) => void;
+  /** the number of suggestions waiting for review, for the nav count */
+  onOpenCount: (n: number) => void;
+}) {
   const [filter, setFilter] = useState<Filter>("open");
-  const [rows, setRows] = useState<Out<"review_suggestions">["suggestions"]>([]);
+  const [rows, setRows] = useState<Out<"review_suggestions">["suggestions"] | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [scanStatus, setScanStatus] = useState<Out<"detector_status"> | null>(null);
 
   const load = useCallback(async () => {
-    const out = await person("review_suggestions", filter === "all" ? {} : { status: filter });
-    setRows(out.suggestions);
-    setScanStatus(await person("detector_status", {}));
-  }, [filter]);
+    try {
+      const out = await person("review_suggestions", filter === "all" ? {} : { status: filter });
+      setRows(out.suggestions);
+      if (filter === "open") onOpenCount(out.suggestions.length);
+      setScanStatus(await person("detector_status", {}));
+      setError(null);
+    } catch (e) {
+      setError(errorText(e));
+    }
+  }, [filter, onOpenCount]);
   useEffect(() => {
-    load().catch((e) => setNotice(errorText(e)));
+    void load();
   }, [load]);
 
   const scan = async () => {
     setBusy(true);
+    setNotice(null);
     try {
       const r = await person("detector_scan", {});
       setNotice(
         r.kanban === "ok"
-          ? `Kanban scan: ${r.issuesSeen} done issues read, ${r.created.length} new suggestion(s), ${r.updated.length} updated.`
-          : (r.message ?? "Kanban is not available."),
+          ? `Task Board scan: ${r.issuesSeen} done issues read, ${r.created.length} new suggestion(s), ${r.updated.length} updated.`
+          : (r.message ?? "Task Board is not available."),
       );
       await load();
     } catch (e) {
-      setNotice(errorText(e));
+      setError(errorText(e));
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <div className="tb-stack">
-      <p className="tb-muted">
-        Agents suggest a workflow when they repeat work. Evolution also reads done Kanban issues and suggests work that one agent finished at least three times. Evolution sees done
-        work only in the projects you share with it in Kanban (shared projects, or projects you grant to Evolution on Kanban's scopes page). Nothing runs until you review it.
-      </p>
-      <div className="tb-row">
-        <Tabs<Filter>
-          label="Status"
-          tabs={[
-            { value: "open", label: "To review" },
-            { value: "approved", label: "Approved" },
-            { value: "rejected", label: "Rejected" },
-            { value: "archived", label: "Archived" },
-            { value: "all", label: "All" },
-          ]}
-          value={filter}
-          onChange={setFilter}
-        />
-        <span className="tb-spacer" />
+    <section className="app-page" aria-label="Suggestions">
+      <div className="page-head">
+        <div className="tb-stack">
+          <h1>Suggestions</h1>
+          <p className="tb-lede">Agents suggest a workflow when they repeat work. Nothing runs until you review it.</p>
+        </div>
+      </div>
+      <div className="toolbar">
+        <ChipGroup label="Status">
+          {FILTERS.map((f) => (
+            <Chip key={f.value} pressed={filter === f.value} onClick={() => setFilter(f.value)}>
+              {f.label}
+            </Chip>
+          ))}
+        </ChipGroup>
         <Button onClick={() => void scan()} disabled={busy}>
-          {busy ? "Scanning" : "Scan Kanban"}
+          {busy ? "Scanning" : "Scan Task Board"}
         </Button>
       </div>
-      {scanStatus ? (
-        <p className="tb-muted">
-          {scanStatus.lastScanAt
-            ? `Kanban last read ${new Date(scanStatus.lastScanAt).toLocaleString()} (${scanStatus.trigger === "owner" ? "by you" : "in the background"}): ${
-                scanStatus.kanban === "ok" ? `${scanStatus.issuesSeen} done issues, ${scanStatus.created} new suggestion(s)` : (scanStatus.message ?? "not available")
-              }. Evolution reads Kanban every ${scanStatus.intervalMinutes} minutes.`
-            : `Evolution reads Kanban every ${scanStatus.intervalMinutes} minutes; no scan yet.`}
-        </p>
+      <p className="tb-hint">
+        {scanStatus?.lastScanAt
+          ? `Task Board last read ${stamp(scanStatus.lastScanAt)} (${scanStatus.trigger === "owner" ? "by you" : "in the background"}): ${
+              scanStatus.kanban === "ok" ? `${scanStatus.issuesSeen} done issues, ${scanStatus.created} new suggestion(s)` : (scanStatus.message ?? "not available")
+            }. Evolving Workflows reads Task Board every ${scanStatus.intervalMinutes} minutes.`
+          : scanStatus
+            ? `Evolving Workflows reads Task Board every ${scanStatus.intervalMinutes} minutes; no scan yet.`
+            : null}{" "}
+        It suggests work that one agent finished at least three times, but only in the projects you share with it in Task Board (shared projects, or projects you grant to Evolving Workflows on the Task Board scopes page).
+      </p>
+      {error ? (
+        <Notice tone="needs-you" role="alert">
+          {error}
+        </Notice>
       ) : null}
       {notice ? <Notice role="status">{notice}</Notice> : null}
-      {rows.length === 0 ? <p>No suggestions here.</p> : null}
-      <ul className="tb-stack" style={{ listStyle: "none", padding: 0 }}>
-        {rows.map((s) => (
-          <li key={s.id} className="tb-panel">
-            <Button variant="ghost" onClick={() => setSelected(selected === s.id ? null : s.id)} aria-expanded={selected === s.id}>
-              <strong>{s.title}</strong>
-            </Button>{" "}
-            <Tag tone={TONE[s.status]}>{s.status}</Tag> <Tag>{s.source === "detector" ? "Kanban detector" : "agent"}</Tag>{" "}
-            <span className="tb-muted">
-              {names(s.agentId)} · {s.evidenceCount} evidence · {new Date(s.createdAt).toLocaleDateString()}
-            </span>
-            {selected === s.id ? <Detail id={s.id} names={names} onChanged={load} onDraft={onDraft} /> : null}
-          </li>
-        ))}
-      </ul>
-    </div>
+      {rows === null ? (
+        error ? null : (
+          <p className="tb-soft" role="status">
+            Loading suggestions.
+          </p>
+        )
+      ) : rows.length === 0 ? (
+        <EmptyState title="No suggestions here." />
+      ) : (
+        <div className="ruled">
+          {rows.map((s) => (
+            <div className="item" key={s.id}>
+              <Swatch open={s.source === "detector"} />
+              <h3>
+                {s.title} <Tag status={STATUS[s.status].status}>{STATUS[s.status].label}</Tag> <Tag>{s.source === "detector" ? "Task Board detector" : "agent"}</Tag>
+              </h3>
+              <span className="meta">{[s.agentId ? names(s.agentId) : null, `${s.evidenceCount} evidence`, day(s.createdAt)].filter(Boolean).join(" · ")}</span>
+              <div className="side">
+                <Button size="sm" onClick={() => setSelected(s.id)} aria-label={`Review ${s.title}`}>
+                  Review
+                </Button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {selected ? <Detail id={selected} names={names} onClose={() => setSelected(null)} onChanged={load} onDraft={onDraft} /> : null}
+    </section>
   );
 }
 
-function Detail({ id, names, onChanged, onDraft }: { id: string; names: (id: string | null) => string; onChanged: () => Promise<void>; onDraft: (id: string) => void }) {
+function Detail({
+  id,
+  names,
+  onClose,
+  onChanged,
+  onDraft,
+}: {
+  id: string;
+  names: (id: string | null) => string;
+  onClose: () => void;
+  onChanged: () => Promise<void>;
+  onDraft: (id: string) => void;
+}) {
   const [d, setD] = useState<Out<"review_suggestion"> | null>(null);
   const [note, setNote] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [working, setWorking] = useState(false);
   const reload = useCallback(async () => setD(await person("review_suggestion", { id })), [id]);
   useEffect(() => {
     reload().catch((e) => setError(errorText(e)));
   }, [reload]);
-  if (!d) return <p>{error ?? "Loading."}</p>;
-  const s = d.suggestion;
-  const decide = async (decision: "approve" | "reject" | "archive") => {
+
+  const s = d?.suggestion;
+  const run = async (fn: () => Promise<void>) => {
+    setWorking(true);
     try {
+      await fn();
+      setError(null);
+    } catch (e) {
+      setError(errorText(e));
+    } finally {
+      setWorking(false);
+    }
+  };
+  const decide = (decision: "approve" | "reject" | "archive") =>
+    run(async () => {
       await person("suggestion_decide", { id, decision, ...(note.trim() ? { note: note.trim() } : {}) });
       await reload();
       await onChanged();
-    } catch (e) {
-      setError(errorText(e));
-    }
-  };
-  const draft = async () => {
-    try {
+    });
+  const draft = () =>
+    run(async () => {
       const created = await person("draft_create", { suggestionId: id });
       onDraft(created.id);
-    } catch (e) {
-      setError(errorText(e));
-    }
-  };
+    });
+
   return (
-    <div className="tb-stack" style={{ marginTop: 12 }}>
-      {s.summary ? <p>{s.summary}</p> : null}
-      <p className="tb-muted">
-        Suggested by {s.createdBy.type === "agent" ? names(s.createdBy.id) : s.createdBy.name}
-        {s.agentId && s.agentId !== s.createdBy.id ? ` about the work of ${names(s.agentId)}` : ""}.
-      </p>
-      <h4>Evidence</h4>
-      <ul>
-        {s.evidence.map((e) => (
-          <li key={`${e.kind}:${e.ref}`}>
-            {e.kind === "kanban_issue" ? "Kanban issue" : `Receipt in ${e.product ?? "an app"}`} <code>{e.ref}</code>
-            {e.title ? ` — ${e.title}` : ""}
-            {e.note ? <span className="tb-muted"> ({e.note})</span> : null}
-          </li>
-        ))}
-      </ul>
-      {s.steps.length ? (
-        <>
-          <h4>Proposed steps</h4>
-          <ol>
-            {s.steps.map((st) => (
-              <li key={st.id}>
-                {st.title}
-                {st.ops.length ? <span className="tb-muted"> — {st.ops.map((o) => `${o.product}.${o.operation}`).join(", ")}</span> : null}
-              </li>
-            ))}
-          </ol>
-        </>
-      ) : null}
-      <Field label="Note (optional)">
-        <TextInput value={note} onChange={(e) => setNote(e.target.value)} maxLength={1000} />
-      </Field>
-      {error ? (
-        <Notice tone="action" role="alert">
-          {error}
-        </Notice>
-      ) : null}
-      <div className="tb-row">
-        {s.status !== "approved" && s.status !== "archived" ? (
-          <Button variant="primary" onClick={() => void decide("approve")}>
-            Approve
-          </Button>
-        ) : null}
-        {s.status === "approved" ? (
-          <Button variant="primary" onClick={() => void draft()}>
-            Start a draft
-          </Button>
-        ) : null}
-        {s.status === "open" || s.status === "approved" ? <Button onClick={() => void decide("reject")}>Reject</Button> : null}
-        {s.status !== "archived" ? <Button onClick={() => void decide("archive")}>Archive</Button> : null}
-      </div>
-      {d.drafts.length ? <p className="tb-muted">Drafts from this suggestion: {d.drafts.map((x) => `${x.title} (${x.state})`).join(", ")}</p> : null}
-      <details>
-        <summary>History</summary>
-        <ul>
-          {d.events.map((e) => (
-            <li key={`${e.at}${e.type}`}>
-              {new Date(e.at).toLocaleString()} — {e.type} by {e.actor.type === "agent" ? names(e.actor.id) : e.actor.name}
-              {e.note ? `: ${e.note}` : ""}
-            </li>
-          ))}
-        </ul>
-      </details>
-    </div>
+    <Dialog
+      open
+      size="lg"
+      kicker="Suggestion"
+      title={s?.title ?? "Suggestion"}
+      onClose={onClose}
+      busy={working}
+      footer={
+        s ? (
+          <>
+            {s.status !== "archived" ? (
+              <Button disabled={working} onClick={() => void decide("archive")}>
+                Archive
+              </Button>
+            ) : null}
+            {s.status === "open" || s.status === "approved" ? (
+              <Button disabled={working} onClick={() => void decide("reject")}>
+                Reject
+              </Button>
+            ) : null}
+            {s.status !== "approved" && s.status !== "archived" ? (
+              <Button variant="primary" disabled={working} onClick={() => void decide("approve")}>
+                Approve
+              </Button>
+            ) : null}
+            {s.status === "approved" ? (
+              <Button variant="primary" disabled={working} onClick={() => void draft()}>
+                Start a draft
+              </Button>
+            ) : null}
+          </>
+        ) : null
+      }
+    >
+      {!d || !s ? (
+        error ? (
+          <Notice tone="needs-you" role="alert">
+            {error}
+          </Notice>
+        ) : (
+          <p className="tb-soft" role="status">
+            Loading.
+          </p>
+        )
+      ) : (
+        <div className="detail">
+          <div className="toolbar">
+            <Tag status={STATUS[s.status].status}>{STATUS[s.status].label}</Tag>
+            <span className="tb-hint">
+              Suggested by {s.createdBy.type === "agent" ? names(s.createdBy.id) : s.createdBy.name}
+              {s.agentId && s.agentId !== s.createdBy.id ? ` about the work of ${names(s.agentId)}` : ""}.
+            </span>
+          </div>
+          {s.summary ? <p className="tb-soft">{s.summary}</p> : null}
+          <section className="tb-stack">
+            <h3>Evidence</h3>
+            <ul className="plain">
+              {s.evidence.map((e) => (
+                <li key={`${e.kind}:${e.ref}`}>
+                  {e.kind === "kanban_issue" ? "Task Board issue" : `Receipt in ${e.product ? appName(e.product) : "an app"}`} <code className="code-ops">{e.ref}</code>
+                  {e.title ? `, ${e.title}` : ""}
+                  {e.note ? <span className="tb-hint"> ({e.note})</span> : null}
+                </li>
+              ))}
+            </ul>
+          </section>
+          {s.steps.length ? (
+            <section className="tb-stack">
+              <h3>Proposed steps</h3>
+              <ol className="steps-list">
+                {s.steps.map((st) => (
+                  <li key={st.id}>
+                    <b>{st.title}</b>
+                    <span>
+                      {st.instruction}
+                      {st.ops.length ? <span className="code-ops"> ({opsOf(st.ops)})</span> : null}
+                    </span>
+                  </li>
+                ))}
+              </ol>
+            </section>
+          ) : null}
+          <Field label="Note (optional)">
+            <TextInput value={note} onChange={(e) => setNote(e.target.value)} maxLength={1000} />
+          </Field>
+          {error ? (
+            <Notice tone="needs-you" role="alert">
+              {error}
+            </Notice>
+          ) : null}
+          {d.drafts.length ? <p className="tb-hint">Drafts from this suggestion: {d.drafts.map((x) => `${x.title} (${x.state === "promoted" ? "promoted" : "editing"})`).join(", ")}</p> : null}
+          <details className="history">
+            <summary>History</summary>
+            <ul>
+              {d.events.map((e) => (
+                <li key={`${e.at}${e.type}`}>
+                  {stamp(e.at)}: {e.type} by {e.actor.type === "agent" ? names(e.actor.id) : e.actor.name}
+                  {e.note ? `, ${e.note}` : ""}
+                </li>
+              ))}
+            </ul>
+          </details>
+        </div>
+      )}
+    </Dialog>
   );
 }

@@ -1,124 +1,69 @@
-// Owner UI inside the ONE app shell (<AppShell> from @opt2-tealbrick/ui, SDK-API §14): Suggestions, Drafts and
-// Workflows, plus the SDK's standard Holds and Agents pages. Every action here is a person op (owner only).
-import { useAgents, useHolds, useSession } from "@opt2-tealbrick/miniapp-sdk/client";
-import { AppShell, Button, Notice, STANDARD_PAGES, Tag } from "@opt2-tealbrick/ui";
-import { useEffect, useState } from "react";
+// Owner UI inside the ONE app shell (<AppShell> from @opt2-tealbrick/ui, SDK-API §14): Suggestions, Drafts, Workflows and
+// Schedules, plus the shared Holds and Agents & scopes pages (./standard.tsx). Every action here is a person op (owner only).
+import { useAgents, useSession } from "@opt2-tealbrick/miniapp-sdk/client";
+import { AppShell, appArt, appColour, Button, Notice, STANDARD_PAGES, Tag } from "@opt2-tealbrick/ui";
+import { useState } from "react";
 import { Drafts } from "./Drafts.tsx";
-import { decideOrError } from "./ops.ts";
 import { Schedules } from "./Schedules.tsx";
 import { Suggestions } from "./Suggestions.tsx";
+import { AgentsPage, HoldsPage, portalHref, type Routes, useHoldList, useNav } from "./standard.tsx";
 import { Workflows } from "./Workflows.tsx";
 
-const NAME = "Evolution";
+const NAME = "Evolving Workflows";
+/** Where scripts/build-ui.ts puts this app's still (`stills/`, next to this module in the hashed asset directory, C61). */
+const STILLS = new URL("./stills/", import.meta.url).href;
 
-/** Pages by shell id → path under the base `/a/evolution/` (the SDK serves index.html for every UI path). */
-const PATHS: Record<string, string> = { suggestions: "./", drafts: "./drafts", workflows: "./workflows", schedules: "./schedules", holds: "./holds", agents: "./configure" };
+/** Shell page id → path under the base `/a/evolution/`. Suggestions is the launch page (manifest `ui.launchPath`), Agents & scopes is `ui.configurePath`. */
+const ROUTES: Routes = { suggestions: "", drafts: "drafts", workflows: "workflows", schedules: "schedules", holds: "holds", agents: "configure" };
 const APP_PAGES = [
   { id: "suggestions", label: "Suggestions" },
   { id: "drafts", label: "Drafts" },
   { id: "workflows", label: "Workflows" },
   { id: "schedules", label: "Schedules" },
 ];
-const PAGES = [...APP_PAGES, ...STANDARD_PAGES.filter((p) => p.id in PATHS)];
-function pageOf(pathname: string): string {
-  const last = pathname.replace(/\/+$/, "").split("/").pop() ?? "";
-  return last === "configure" ? "agents" : last in PATHS ? last : "suggestions";
-}
-
-function Holds() {
-  const { holds, loading, decide } = useHolds({ status: "held" });
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState<string | null>(null);
-  if (loading) return <p>Loading holds.</p>;
-  const act = async (id: string, decision: "approve" | "deny") => {
-    setBusy(id);
-    setError(null);
-    setError(await decideOrError(decide, id, decision));
-    setBusy(null);
-  };
-  return (
-    <>
-      {error ? (
-        <Notice tone="action" role="alert">
-          {error}
-        </Notice>
-      ) : null}
-      {holds.length === 0 ? <p>No calls wait for your approval.</p> : null}
-      <ul>
-        {holds.map((h) => (
-          <li key={h.id}>
-            <strong>{h.caller.name}</strong> {h.summary} <Tag tone="action">{h.op}</Tag>
-            {h.view ? <pre>{h.view}</pre> : null}
-            <Button variant="primary" disabled={busy === h.id} onClick={() => void act(h.id, "approve")}>
-              Approve
-            </Button>{" "}
-            <Button disabled={busy === h.id} onClick={() => void act(h.id, "deny")}>
-              Deny
-            </Button>
-          </li>
-        ))}
-      </ul>
-    </>
-  );
-}
-
-function Agents({ agents, loading }: ReturnType<typeof useAgents>) {
-  if (loading) return <p>Loading agents.</p>;
-  if (agents.length === 0) return <p>No agents are connected to this app.</p>;
-  return (
-    <ul>
-      {agents.map((a) => (
-        <li key={a.id}>
-          {a.name} <Tag>{a.mode}</Tag>
-        </li>
-      ))}
-    </ul>
-  );
-}
+const PAGES = [...APP_PAGES, ...STANDARD_PAGES.filter((p) => p.id in ROUTES)];
 
 export function App() {
   const { principal, status, signOut } = useSession();
   const directory = useAgents();
-  const [page, setPage] = useState(() => pageOf(globalThis.location.pathname));
+  const nav = useNav(ROUTES, "suggestions");
+  const holds = useHoldList();
   const [openDraft, setOpenDraft] = useState<string | null>(null);
   const [openWorkflow, setOpenWorkflow] = useState<string | null>(null);
-  useEffect(() => {
-    const onPop = () => setPage(pageOf(globalThis.location.pathname));
-    globalThis.addEventListener("popstate", onPop);
-    return () => globalThis.removeEventListener("popstate", onPop);
-  }, []);
-  const navigate = (id: string) => {
-    globalThis.history.pushState(null, "", PATHS[id]);
-    setPage(id);
-  };
+  const [toReview, setToReview] = useState(0);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [portal] = useState(portalHref);
   const names = (id: string | null) => (id ? (directory.agents.find((a) => a.id === id)?.name ?? id) : "the owner");
+  const pages = PAGES.map((p) => (p.id === "holds" ? { ...p, badge: holds.holds?.length || null } : p.id === "suggestions" ? { ...p, badge: toReview || null } : p));
+  const signedIn = status === "signed_in" && principal;
   const content = (() => {
-    switch (page) {
+    switch (nav.page) {
       case "drafts":
         return (
           <Drafts
             openId={openDraft}
             onPromoted={(wf) => {
               setOpenWorkflow(wf);
-              navigate("workflows");
+              nav.go("workflows");
             }}
           />
         );
       case "workflows":
         return <Workflows openId={openWorkflow} />;
       case "schedules":
-        return <Schedules />;
+        return <Schedules agents={directory.agents} agentsLoading={directory.loading} />;
       case "holds":
-        return <Holds />;
+        return <HoldsPage list={holds} only={nav.hold} empty="No calls wait for your approval." />;
       case "agents":
-        return <Agents {...directory} />;
+        return <AgentsPage />;
       default:
         return (
           <Suggestions
             names={names}
+            onOpenCount={setToReview}
             onDraft={(id) => {
               setOpenDraft(id);
-              navigate("drafts");
+              nav.go("drafts");
             }}
           />
         );
@@ -127,25 +72,41 @@ export function App() {
   return (
     <AppShell
       title={NAME}
-      pages={PAGES}
-      current={page}
-      onNavigate={navigate}
+      colour={appColour("evolution")}
+      art={appArt("evolution", STILLS)}
+      portalHref={portal}
+      pages={pages}
+      current={nav.page}
+      onNavigate={nav.go}
+      pageHref={nav.href}
       actions={
-        status === "signed_in" && principal ? (
-          <Button onClick={() => void signOut()}>Sign out</Button>
+        signedIn ? (
+          <Button
+            size="sm"
+            onClick={() => {
+              setNotice(null);
+              signOut().catch(() => setNotice("Couldn’t sign you out. Check your connection and try again."));
+            }}
+          >
+            Sign out
+          </Button>
         ) : (
-          <Tag tone={status === "loading" ? "progress" : "action"}>{status === "loading" ? "Loading" : "Signed out"}</Tag>
+          <Tag status={status === "loading" ? "busy" : "needs-you"}>{status === "loading" ? "Loading" : "Signed out"}</Tag>
         )
       }
       banner={
         status === "signed_out" ? (
-          <Notice tone="action" role="alert">
+          <Notice tone="needs-you" role="alert">
             Open this app from Portal to sign in.
+          </Notice>
+        ) : notice ? (
+          <Notice tone="needs-you" role="alert">
+            {notice}
           </Notice>
         ) : null
       }
     >
-      {status === "signed_out" ? null : content}
+      {signedIn ? content : null}
     </AppShell>
   );
 }

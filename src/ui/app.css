@@ -1,0 +1,43 @@
+/* Evolving Workflows: the page layouts that only this app has (list + detail panes, numbered steps). Tokens only. */
+.two-pane { display: grid; grid-template-columns: 280px minmax(0, 1fr); gap: var(--tb-s6); align-items: start; }
+.two-pane > * { min-width: 0; }
+.pane-list { display: grid; gap: 4px; align-content: start; }
+.pane-item { display: flex; align-items: center; justify-content: space-between; gap: var(--tb-s2); width: 100%; min-height: 44px; padding: 10px 12px; border: 0; border-radius: var(--tb-radius-brick); background: transparent; color: var(--tb-ink); font: inherit; font-weight: var(--tb-weight-nav); text-align: left; cursor: pointer; }
+.pane-item:hover { background: var(--tb-tile); }
+.pane-item[aria-current="true"] { background: var(--tb-tile); box-shadow: inset 0 0 0 2px var(--tb-ink); }
+.pane-item > .tb-ink { min-width: 0; overflow-wrap: anywhere; }
+
+.detail { display: grid; gap: var(--tb-s5); }
+.detail-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: var(--tb-s3); }
+.detail-head h2 { font-size: 1.5rem; line-height: 32px; }
+.detail-head .tb-select, .detail-head .tb-field { width: 200px; max-width: 100%; }
+.detail .tb-section { padding-block: var(--tb-s5) 0; }
+.detail h3 { font-size: 1.0625rem; line-height: 22px; }
+
+.steps-list { display: grid; gap: 10px; counter-reset: s; list-style: none; padding: 0; margin: 0; }
+.steps-list li { counter-increment: s; display: grid; grid-template-columns: 32px 1fr; gap: 2px 8px; }
+.steps-list li::before { content: counter(s); grid-row: span 2; font-weight: var(--tb-weight-head); font-size: 1.25rem; line-height: 24px; color: var(--tb-teal-ink); }
+.steps-list b { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; font-weight: var(--tb-weight-label); line-height: 28px; }
+.steps-list li > span { grid-column: 2; color: var(--tb-ink-soft); font-size: var(--tb-text-label); }
+.code-ops { font-family: var(--tb-font-mono); font-size: var(--tb-text-tag); color: var(--tb-ink-soft); overflow-wrap: anywhere; }
+.kv dt { display: flex; align-items: center; gap: 8px; }
+
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: var(--tb-s3); }
+.three { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--tb-s3); align-items: end; }
+.plain { display: grid; gap: var(--tb-s2); list-style: none; padding: 0; margin: 0; }
+.edit-list { display: grid; list-style: none; padding: 0; margin: 0; box-shadow: var(--tb-rule-top); }
+.edit-list > li { display: grid; gap: var(--tb-s3); padding: var(--tb-s4) 0; box-shadow: var(--tb-hair-bottom); }
+.edit-list .edit-head { line-height: 24px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--tb-s3); font-weight: var(--tb-weight-label); }
+.history summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; font-weight: var(--tb-weight-label); }
+.history ul { display: grid; gap: var(--tb-s2); list-style: none; padding: 0; margin: 0; color: var(--tb-ink-soft); font-size: var(--tb-text-label); }
+.runs { display: grid; gap: var(--tb-s3); }
+.diff del { color: var(--tb-muted); }
+.diff ins { text-decoration: none; font-weight: var(--tb-weight-label); }
+.cards { display: grid; gap: var(--tb-s4); }
+.cards > .tb-card { display: grid; gap: var(--tb-s3); }
+.cards h3 { font-size: 1.0625rem; font-weight: var(--tb-weight-head); line-height: 22px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.card-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--tb-s3); }
+
+@media (max-width: 960px) { .two-pane { grid-template-columns: 1fr; } .three { grid-template-columns: 1fr; } }
+@media (max-width: 720px) { .two { grid-template-columns: 1fr; } }
+.detail .toolbar .tb-select { width: 220px; max-width: 100%; }

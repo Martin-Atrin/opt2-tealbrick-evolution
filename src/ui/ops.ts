@@ -1,6 +1,7 @@
 // Typed person-op calls (the kit's PersonOps map: id → {input, output}, generated from the manifest).
 import { callOp } from "@opt2-tealbrick/miniapp-sdk/client";
 import type { PersonOps } from "#kit";
+import { errorMessage } from "./standard.tsx";
 
 export function person<K extends keyof PersonOps>(op: K, input: PersonOps[K]["input"]): Promise<PersonOps[K]["output"]> {
   return callOp<PersonOps[K]["output"]>(op as string, input as never);
@@ -12,19 +13,12 @@ export type Out<K extends keyof PersonOps> = PersonOps[K]["output"];
 export const ALLOWLIST_TEXT =
   "The agent may call these operations; the bridge blocks every other operation. The steps are guidance you reviewed: nothing forces the agent to follow them in order.";
 
-export function errorText(e: unknown): string {
-  return e instanceof Error ? e.message : "Something went wrong.";
-}
+const SESSION_CODES = new Set(["session_required", "csrf_invalid", "network_error"]);
 
-/**
- * RUL-01: Approve / Deny on the Holds page. An expired hold, a 409 or a network error must reach the owner as a message,
- * never as an unhandled rejection. Returns the error text, or null when the decision went through.
- */
-export async function decideOrError<D extends string>(decide: (id: never, decision: D) => Promise<void>, id: string, decision: D): Promise<string | null> {
-  try {
-    await decide(id as never, decision);
-    return null;
-  } catch (e) {
-    return errorText(e);
-  }
+/** Plain sentence for a failed call: the app's own message (it is written for the owner), or the shared one for session and network errors. */
+export function errorText(e: unknown): string {
+  const code = (e as { code?: unknown } | null)?.code;
+  if (typeof code === "string" && SESSION_CODES.has(code)) return errorMessage(e);
+  if ((e as { httpStatus?: unknown } | null)?.httpStatus === 401) return errorMessage(e);
+  return e instanceof Error && e.message ? e.message : "Something went wrong. Try again in a moment.";
 }
