@@ -1,8 +1,8 @@
 // Workflows page: permanent workflows, their versions, the diff between two versions, and the Bound-agent recipe.
 import { HARNESS_OPTION_IDS, type HarnessOptionId } from "@opt2-tealbrick/spec/routes";
-import { appName, Button, CopyBlock, EmptyState, Field, Ink, Notice, Select, Tag, TextInput } from "@opt2-tealbrick/ui";
+import { AppIcon, appArt, appName, Button, CopyBlock, EmptyState, Field, Ink, Notice, Select, Tag, TextInput } from "@opt2-tealbrick/ui";
 import { Fragment, useCallback, useEffect, useState } from "react";
-import { ALLOWLIST_TEXT, errorText, type Out, person } from "./ops.ts";
+import { ALLOWLIST_TEXT, day, errorText, type Out, person } from "./ops.ts";
 
 /** EVO-01: one label per spec harness option id (HARNESS_OPTION_IDS); a new id fails the typecheck until it has a label. */
 const HARNESS_LABELS: Record<HarnessOptionId, string> = {
@@ -14,10 +14,22 @@ const HARNESS_LABELS: Record<HarnessOptionId, string> = {
   "tbd-default": "Tealbrick desktop app",
   "tealbrick-cli": "Tealbrick command line",
 };
-const HARNESSES = HARNESS_OPTION_IDS.map((value) => ({ value, label: HARNESS_LABELS[value] })).sort((a, b) => (a.value === "generic-mcp" ? -1 : b.value === "generic-mcp" ? 1 : 0));
+/** Option order of the approved mockup (C185); an id missing here goes last. The default stays "generic-mcp". */
+const HARNESS_ORDER: readonly HarnessOptionId[] = ["claude-desktop", "claude-code", "codex-desktop", "eve", "generic-mcp", "tbd-default", "tealbrick-cli"];
+const rank = (id: HarnessOptionId) => (HARNESS_ORDER.includes(id) ? HARNESS_ORDER.indexOf(id) : HARNESS_ORDER.length);
+const HARNESSES = [...HARNESS_OPTION_IDS].sort((a, b) => rank(a) - rank(b)).map((value) => ({ value, label: HARNESS_LABELS[value] }));
+type Allowed = Out<"workflow_versions">["versions"][number]["allowed"];
+/** Same rule as the server's diff (src/model.ts diffSnapshots `widensAccess`): an operation or an access kind was added. */
+function widens(from: Allowed, to: Allowed): boolean {
+  const ops = (a: Allowed) => new Set(a.flatMap((x) => x.operations.map((o) => `${x.product}.${o}`)));
+  const crud = (a: Allowed) => new Set(a.flatMap((x) => x.crud.map((c) => `${x.product}:${c}`)));
+  const opsFrom = ops(from);
+  const crudFrom = crud(from);
+  return [...ops(to)].some((k) => !opsFrom.has(k)) || [...crud(to)].some((k) => !crudFrom.has(k));
+}
 const opsOf = (ops: { product: string; operation: string }[]) => ops.map((o) => `${o.product}.${o.operation}`).join(", ");
 
-export function Workflows({ openId }: { openId: string | null }) {
+export function Workflows({ openId, stills }: { openId: string | null; stills: string }) {
   const [rows, setRows] = useState<Out<"workflows_list">["workflows"] | null>(null);
   const [selected, setSelected] = useState<string | null>(openId);
   const [error, setError] = useState<string | null>(null);
@@ -35,7 +47,7 @@ export function Workflows({ openId }: { openId: string | null }) {
   return (
     <section className="app-page" aria-label="Workflows">
       <div className="page-head">
-        <div className="tb-stack">
+        <div className="tb-stack head-text">
           <h1>Workflows</h1>
           <p className="tb-lede">A workflow is a promoted draft. Each promotion is a new version; old versions stay readable.</p>
         </div>
@@ -68,14 +80,14 @@ export function Workflows({ openId }: { openId: string | null }) {
               </button>
             ))}
           </nav>
-          {current ? <Detail key={current} id={current} /> : null}
+          {current ? <Detail key={current} id={current} stills={stills} /> : null}
         </div>
       )}
     </section>
   );
 }
 
-function Detail({ id }: { id: string }) {
+function Detail({ id, stills }: { id: string; stills: string }) {
   const [data, setData] = useState<Out<"workflow_versions"> | null>(null);
   const [shown, setShown] = useState<number>(0);
   const [from, setFrom] = useState(1);
@@ -92,6 +104,7 @@ function Detail({ id }: { id: string }) {
     setShown(last);
     setTo(last);
     setFrom(Math.max(1, last - 1));
+    setAgentName(`${r.workflow.title} (Bound)`);
   }, [id]);
   useEffect(() => {
     load().catch((e) => setError(errorText(e)));
@@ -108,7 +121,7 @@ function Detail({ id }: { id: string }) {
     );
   const v = data.versions.find((x) => x.version === shown) ?? data.versions.at(-1);
   if (!v) return null;
-  const options = data.versions.map((x) => ({ value: String(x.version), label: `v${x.version} (${new Date(x.promotedAt).toLocaleDateString()})` }));
+  const options = data.versions.map((x) => ({ value: String(x.version), label: `v${x.version} (${day(x.promotedAt)})` }));
 
   const compare = async () => {
     try {
@@ -135,6 +148,8 @@ function Detail({ id }: { id: string }) {
     a.click();
     URL.revokeObjectURL(url);
   };
+  const previous = data.versions.find((x) => x.version === v.version - 1);
+  const widened = previous ? widens(previous.allowed, v.allowed) : false;
   const changes = diff
     ? diff.fields.length + diff.steps.added.length + diff.steps.removed.length + diff.steps.changed.length + diff.operations.added.length + diff.operations.removed.length
     : 0;
@@ -163,13 +178,16 @@ function Detail({ id }: { id: string }) {
         </ol>
       ) : null}
 
-      <section className="tb-section">
+      <section className="tb-stack ops-block">
         <h3>Allowed operations</h3>
         <Notice role="status">{ALLOWLIST_TEXT}</Notice>
         <dl className="kv">
           {v.allowed.map((a) => (
             <Fragment key={a.product}>
-              <dt>{appName(a.product)}</dt>
+              <dt>
+                <AppIcon art={appArt(a.product, stills)} name={appName(a.product)} size={24} />
+                {appName(a.product)}
+              </dt>
               <dd className="code-ops">
                 {a.operations.join(", ")} ({a.crud.join(", ")})
               </dd>
@@ -177,6 +195,11 @@ function Detail({ id }: { id: string }) {
           ))}
         </dl>
       </section>
+      {widened ? (
+        <Notice tone="needs-you">
+          <strong>This version allows more than the previous one.</strong> An existing Bound agent keeps its old operation list until you change its policy in Portal.
+        </Notice>
+      ) : null}
 
       {data.versions.length > 1 ? (
         <section className="tb-section">
@@ -228,11 +251,11 @@ function Detail({ id }: { id: string }) {
         <h3>Bound agent recipe (version {v.version})</h3>
         <p className="tb-soft">
           The recipe creates a new agent in Portal, sets it Bound with the operations above, and connects it to each app. You import it in Portal and apply it with one
-          confirmation. Nothing is created from here.
+          confirmation.
         </p>
         <div className="two">
           <Field label="Agent name">
-            <TextInput value={agentName} placeholder={`${data.workflow.title} (Bound)`} onChange={(e) => setAgentName(e.target.value)} maxLength={64} />
+            <TextInput value={agentName} onChange={(e) => setAgentName(e.target.value)} maxLength={64} />
           </Field>
           <Field label="Runs in">
             <Select value={harness} onValueChange={setHarness} options={HARNESSES} />

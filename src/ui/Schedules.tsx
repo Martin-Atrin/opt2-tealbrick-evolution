@@ -3,7 +3,7 @@
 import type { UseAgents } from "@opt2-tealbrick/miniapp-sdk/client";
 import { Button, CopyBlock, Dialog, EmptyState, Field, Notice, Select, type Status, Table, Tag, TextInput } from "@opt2-tealbrick/ui";
 import { useCallback, useEffect, useState } from "react";
-import { errorText, type Out, person } from "./ops.ts";
+import { errorText, type Out, person, utcDue, utcStamp } from "./ops.ts";
 
 type Automation = Out<"automations_list">["automations"][number];
 type Run = Out<"runs_list">["runs"][number];
@@ -15,7 +15,6 @@ const SERVE_CONFIG = {
   inboxes: [],
   routines: [{ due: "evolution__routines_due", claim: "evolution__routine_claim", report: "evolution__routine_report", items: "jobs", id: "occurrence" }],
 };
-const when = (s: string) => new Date(s).toLocaleString();
 
 export function Schedules({ agents, agentsLoading }: { agents: UseAgents["agents"]; agentsLoading: boolean }) {
   const [rows, setRows] = useState<Automation[] | null>(null);
@@ -58,7 +57,7 @@ export function Schedules({ agents, agentsLoading }: { agents: UseAgents["agents
   return (
     <section className="app-page" aria-label="Schedules">
       <div className="page-head">
-        <div className="tb-stack">
+        <div className="tb-stack head-text">
           <h1>Schedules</h1>
           <p className="tb-lede">A schedule runs a promoted workflow with one Bound agent. Every run is a Task Board issue assigned to the agent. Times are UTC.</p>
         </div>
@@ -66,9 +65,6 @@ export function Schedules({ agents, agentsLoading }: { agents: UseAgents["agents
           New schedule
         </Button>
       </div>
-      <p className="tb-hint">
-        Evolving Workflows does not start the agent: the agent’s own runner (<code className="code-ops">tealbrick agent serve</code> in routines mode) asks for due runs and claims each one once.
-      </p>
       {workflowsError ? (
         <Notice tone="needs-you" role="alert">
           {workflowsError}
@@ -113,12 +109,12 @@ export function Schedules({ agents, agentsLoading }: { agents: UseAgents["agents
                 </div>
               </div>
               <p className="tb-hint">
-                {name(a.agentId)} · <code className="code-ops">{a.cron}</code> · next {when(a.effectiveNextDueAt)} · {a.versionPin ? `pinned v${a.versionPin}` : "active version"} · Task Board{" "}
+                {name(a.agentId)} · {a.cron} · next {utcStamp(a.effectiveNextDueAt)} · {a.versionPin ? `pinned v${a.versionPin}` : "active version"} · Task Board{" "}
                 {a.kanbanProject ?? "own project of Evolving Workflows"}
               </p>
               {a.missedSince ? (
                 <Notice tone="needs-you">
-                  <strong>Runs were missed since {when(a.missedSince)}:</strong> the agent’s runner did not claim them in time. Check that tealbrick agent serve is running.
+                  <strong>Runs were missed since {utcStamp(a.missedSince)}:</strong> the agent’s runner did not claim them in time. Check that tealbrick agent serve is running.
                 </Notice>
               ) : null}
               {openId === a.id ? <Runs id={a.id} /> : null}
@@ -129,6 +125,9 @@ export function Schedules({ agents, agentsLoading }: { agents: UseAgents["agents
       <details className="history">
         <summary>Runner configuration for the Bound agent’s machine</summary>
         <div className="tb-stack">
+          <p className="tb-hint">
+            Evolving Workflows does not start the agent: the agent’s own runner (<code className="code-ops">tealbrick agent serve</code> in routines mode) asks for due runs and claims each one once.
+          </p>
           <p className="tb-soft">Save as a file and start the runner with it on the machine where the Bound agent is connected (tealbrick agent serve).</p>
           <CopyBlock text={JSON.stringify(SERVE_CONFIG, null, 2)} label="runner configuration" />
         </div>
@@ -266,7 +265,7 @@ function Runs({ id }: { id: string }) {
       <tbody>
         {runs.map((r) => (
           <tr key={r.occurrence}>
-            <td className="num">{when(r.dueAt)}</td>
+            <td className="num">{utcDue(r.dueAt)}</td>
             <td>
               <Tag status={STATUS[r.status]}>{r.status}</Tag>
             </td>

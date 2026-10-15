@@ -22,3 +22,33 @@ export function errorText(e: unknown): string {
   if ((e as { httpStatus?: unknown } | null)?.httpStatus === 401) return errorMessage(e);
   return e instanceof Error && e.message ? e.message : "Something went wrong. Try again in a moment.";
 }
+
+// Dates as the approved mockup shows them (C185, D5): fixed en-GB locale and 24-hour clock, so every owner sees one form.
+const DAY: Intl.DateTimeFormatOptions = { day: "numeric", month: "short", year: "numeric" };
+const TIME: Intl.DateTimeFormatOptions = { hour: "2-digit", minute: "2-digit", hourCycle: "h23" };
+const parts = (iso: string, opts: Intl.DateTimeFormatOptions) =>
+  Object.fromEntries(new Intl.DateTimeFormat("en-GB", opts).formatToParts(new Date(iso)).map((p) => [p.type, p.value]));
+
+/** "11 Oct 2026" (the owner's own day) */
+export function day(iso: string): string {
+  const p = parts(iso, DAY);
+  return `${p.day} ${p.month} ${p.year}`;
+}
+
+/** "14 Oct 2026, 08:00" in UTC (schedules say "Times are UTC") */
+export function utcStamp(iso: string): string {
+  const p = parts(iso, { ...DAY, ...TIME, timeZone: "UTC" });
+  return `${p.day} ${p.month} ${p.year}, ${p.hour}:${p.minute}`;
+}
+
+/** "13 Oct 08:00" in UTC (the Due column of the run history) */
+export function utcDue(iso: string): string {
+  const p = parts(iso, { day: "numeric", month: "short", ...TIME, timeZone: "UTC" });
+  return `${p.day} ${p.month} ${p.hour}:${p.minute}`;
+}
+
+/** "14 Oct 2026, 08:00" in the owner's own time zone (activity and history stamps) */
+export function stamp(iso: string): string {
+  const p = parts(iso, { ...DAY, ...TIME });
+  return `${p.day} ${p.month} ${p.year}, ${p.hour}:${p.minute}`;
+}

@@ -8,13 +8,13 @@
 //   deploy is visible at once and assets are never re-downloaded while unchanged.
 // - the kit stylesheets are linked first, then the app's own src/ui/pages.css and src/ui/app.css (when present);
 //   files a kit stylesheet refers to (Nunito: ./fonts/*.woff2 + OFL.txt) are copied beside the vendored sheet, and the
-//   kit's still for this product id (assets/apps/) goes to stills/ (App.tsx reads it relative to its own module URL).
+//   kit's app stills (assets/apps/) go to stills/ (App.tsx reads them relative to its own module URL).
 import { createHash } from "node:crypto";
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { builtinModules, createRequire } from "node:module";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { appArt } from "@opt2-tealbrick/ui";
+import { APPS, appArt } from "@opt2-tealbrick/ui";
 import { importSpecifiers } from "./import-scan.ts";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
@@ -163,11 +163,14 @@ for (const name of APP_STYLES) {
   copyFileSync(file, join(out, name));
   links.push(`<link rel="stylesheet" href="./${name}" />`);
 }
-// the kit's still for this product id (interim lookup by id, kit APPS table); an unknown id has none and gets the neutral header
+// the kit's stills (interim lookup by id, kit APPS table): this product's own still for the header (an unknown id has
+// none and gets the neutral header), plus every other kit app's still for the AppIcons next to the allowed operations
+// (Workflows page, C185)
 const productId = (JSON.parse(readFileSync(join(root, "tealbrick.manifest.json"), "utf8")) as { id: string }).id;
-const art = appArt(productId, "stills/");
-if (art) {
-  const apps = join(pkgDir("@opt2-tealbrick/ui", join(root, "package.json")), "assets", "apps");
+const apps = join(pkgDir("@opt2-tealbrick/ui", join(root, "package.json")), "assets", "apps");
+for (const id of new Set([productId, ...Object.keys(APPS)])) {
+  const art = appArt(id, "stills/");
+  if (!art) continue;
   mkdirSync(join(out, "stills"), { recursive: true });
   for (const url of [art.still, art.still2x]) {
     if (!url) continue;

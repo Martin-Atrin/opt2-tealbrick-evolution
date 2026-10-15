@@ -60,11 +60,9 @@ export function Drafts({ openId, onPromoted }: { openId: string | null; onPromot
   return (
     <section className="app-page" aria-label="Drafts">
       <div className="page-head">
-        <div className="tb-stack">
-          <h1>Drafts</h1>
-          <p className="tb-lede">A draft is the workflow text you review: an instruction for the Bound agent, the steps, the trigger and the operations it may call.</p>
-        </div>
+        <h1>Drafts</h1>
       </div>
+      <p className="tb-soft page-desc">A draft is the workflow text you review: an instruction for the Bound agent, the steps, the trigger and the operations it may call.</p>
       <div className="toolbar">
         <Field label="Start from">
           <Select

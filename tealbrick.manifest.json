@@ -4,8 +4,8 @@
   "id": "evolution",
   "name": "Evolving Workflows",
   "summary": "Evolving Workflows turns work your agents repeat into reviewed, versioned workflows that a Bound agent runs on a schedule.",
-  "description": "Agents suggest a workflow when they repeat work, with evidence. Evolving Workflows also spots repeated done issues in Task Board. You review each suggestion, edit a draft (steps, allowed operations, trigger), promote it to a versioned workflow, export a recipe that creates a Bound agent in Portal, and schedule it. The Bound agent's own runner claims each due run at most once; every run is a Kanban issue assigned to that agent. A Bound agent may call only the allowed operations; it is not forced to follow the steps.",
-  "version": "0.2.10",
+  "description": "Agents suggest a workflow when they repeat work, with evidence. Evolving Workflows also spots repeated done issues in Task Board. You review each suggestion, edit a draft (steps, allowed operations, trigger), promote it to a versioned workflow, export a recipe that creates a Bound agent in Portal, and schedule it. The Bound agent’s own runner claims each due run at most once; every run is a Task Board issue assigned to that agent. A Bound agent may call only the allowed operations; it is not forced to follow the steps.",
+  "version": "0.2.11",
   "sdkMajor": 1,
   "publisher": {
     "name": "Teal Brick opt2"
@@ -62,7 +62,7 @@
     {
       "id": "suggestion_create",
       "title": "Suggest a workflow",
-      "description": "Suggest that repeated work becomes a reviewed workflow. Give a title, the evidence (Kanban issue ids or receipt call ids of the work you repeated) and, if you can, the steps you took and the operations each step used. The owner reviews every suggestion; nothing runs automatically.",
+      "description": "Suggest that repeated work becomes a reviewed workflow. Give a title, the evidence (Task Board issue ids or receipt call ids of the work you repeated) and, if you can, the steps you took and the operations each step used. The owner reviews every suggestion; nothing runs automatically.",
       "input": {
         "type": "object",
         "additionalProperties": false,
@@ -1996,8 +1996,8 @@
     },
     {
       "id": "detector_scan",
-      "title": "Scan Kanban for repeated work",
-      "description": "Read done Kanban issues now and suggest work one agent repeated at least minRepeats times. Evolution also does this in the background every 15 minutes. It reads only the projects you share with Evolution in Kanban.",
+      "title": "Scan Task Board for repeated work",
+      "description": "Read done Task Board issues now and suggest work one agent repeated at least minRepeats times. Evolving Workflows also does this in the background every 15 minutes. It reads only the projects you share with Evolving Workflows in Task Board.",
       "input": {
         "type": "object",
         "additionalProperties": false,
@@ -2163,8 +2163,8 @@
     },
     {
       "id": "detector_status",
-      "title": "Kanban scan status",
-      "description": "When Evolution last read Kanban for repeated work (in the background every 15 minutes, or when you scan), and what it found.",
+      "title": "Task Board scan status",
+      "description": "When Evolving Workflows last read Task Board for repeated work (in the background every 15 minutes, or when you scan), and what it found.",
       "input": {
         "type": "object",
         "additionalProperties": false,
@@ -4035,7 +4035,7 @@
     {
       "id": "automation_set",
       "title": "Schedule a workflow",
-      "description": "Create or change the schedule of a workflow for one Bound agent (cron, 5 fields, UTC). Each run becomes a Kanban issue in kanbanProject: use a project you share with the Bound agent in Kanban, so the agent can comment on its runs (empty = Evolution's own project, which the agent sees only if you share it).",
+      "description": "Create or change the schedule of a workflow for one Bound agent (cron, 5 fields, UTC). Each run becomes a Task Board issue in kanbanProject: use a project you share with the Bound agent in Task Board, so the agent can comment on its runs (empty = the own project of Evolving Workflows, which the agent sees only if you share it).",
       "input": {
         "type": "object",
         "additionalProperties": false,
@@ -4664,14 +4664,14 @@
         "create",
         "update"
       ],
-      "purpose": "Reads done Kanban issues to spot repeated work, and records every scheduled run as a Kanban issue assigned to the Bound agent."
+      "purpose": "Reads done Task Board issues to spot repeated work, and records every scheduled run as a Task Board issue assigned to the Bound agent."
     }
   ],
   "needsAgentDirectory": true,
   "skills": [
     {
       "id": "use-evolution",
-      "title": "How to use Evolution",
+      "title": "How to use Evolving Workflows",
       "file": "skills/use-evolution/SKILL.md"
     }
   ],

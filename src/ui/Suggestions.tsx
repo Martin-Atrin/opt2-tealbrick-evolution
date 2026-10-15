@@ -1,7 +1,7 @@
 // Suggestions page: review what agents (and the Task Board detector) suggest; decide; start a draft from an approved one.
 import { appName, Button, Chip, ChipGroup, Dialog, EmptyState, Field, Notice, type Status, Swatch, Tag, TextInput } from "@opt2-tealbrick/ui";
 import { useCallback, useEffect, useState } from "react";
-import { errorText, type Out, person } from "./ops.ts";
+import { day, errorText, type Out, person, stamp } from "./ops.ts";
 
 type SuggestionStatus = "open" | "approved" | "rejected" | "archived";
 type Filter = SuggestionStatus | "all";
@@ -18,8 +18,6 @@ const STATUS: Record<SuggestionStatus, { status: Status; label: string }> = {
   rejected: { status: "needs-you", label: "Rejected" },
   archived: { status: "default", label: "Archived" },
 };
-const day = (iso: string) => new Date(iso).toLocaleDateString();
-const stamp = (iso: string) => new Date(iso).toLocaleString();
 const opsOf = (ops: { product: string; operation: string }[]) => ops.map((o) => `${o.product}.${o.operation}`).join(", ");
 
 export function Suggestions({
@@ -76,10 +74,7 @@ export function Suggestions({
   return (
     <section className="app-page" aria-label="Suggestions">
       <div className="page-head">
-        <div className="tb-stack">
-          <h1>Suggestions</h1>
-          <p className="tb-lede">Agents suggest a workflow when they repeat work. Nothing runs until you review it.</p>
-        </div>
+        <h1>Suggestions</h1>
       </div>
       <div className="toolbar">
         <ChipGroup label="Status">

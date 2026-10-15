@@ -2,8 +2,9 @@
 // Schedules, plus the shared Holds and Agents & scopes pages (./standard.tsx). Every action here is a person op (owner only).
 import { useAgents, useSession } from "@opt2-tealbrick/miniapp-sdk/client";
 import { AppShell, appArt, appColour, Button, Notice, STANDARD_PAGES, Tag } from "@opt2-tealbrick/ui";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Drafts } from "./Drafts.tsx";
+import { person } from "./ops.ts";
 import { Schedules } from "./Schedules.tsx";
 import { Suggestions } from "./Suggestions.tsx";
 import { AgentsPage, HoldsPage, portalHref, type Routes, useHoldList, useNav } from "./standard.tsx";
@@ -33,9 +34,17 @@ export function App() {
   const [toReview, setToReview] = useState(0);
   const [notice, setNotice] = useState<string | null>(null);
   const [portal] = useState(portalHref);
+  const signedIn = status === "signed_in" && Boolean(principal);
+  // The Suggestions count shows on every page (C185, D4): one read at sign-in with the same input the Suggestions page
+  // sends; the page keeps it current afterwards. A failed read leaves the nav without a count.
+  useEffect(() => {
+    if (!signedIn) return;
+    person("review_suggestions", { status: "open" })
+      .then((r) => setToReview(r.suggestions.length))
+      .catch(() => {});
+  }, [signedIn]);
   const names = (id: string | null) => (id ? (directory.agents.find((a) => a.id === id)?.name ?? id) : "the owner");
   const pages = PAGES.map((p) => (p.id === "holds" ? { ...p, badge: holds.holds?.length || null } : p.id === "suggestions" ? { ...p, badge: toReview || null } : p));
-  const signedIn = status === "signed_in" && principal;
   const content = (() => {
     switch (nav.page) {
       case "drafts":
@@ -49,7 +58,7 @@ export function App() {
           />
         );
       case "workflows":
-        return <Workflows openId={openWorkflow} />;
+        return <Workflows openId={openWorkflow} stills={STILLS} />;
       case "schedules":
         return <Schedules agents={directory.agents} agentsLoading={directory.loading} />;
       case "holds":

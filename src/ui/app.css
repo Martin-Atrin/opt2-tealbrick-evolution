@@ -7,12 +7,12 @@
 .pane-item[aria-current="true"] { background: var(--tb-tile); box-shadow: inset 0 0 0 2px var(--tb-ink); }
 .pane-item > .tb-ink { min-width: 0; overflow-wrap: anywhere; }
 
-.detail { display: grid; gap: var(--tb-s5); }
-.detail-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: var(--tb-s3); }
+.detail { display: grid; gap: var(--tb-s4); }
+.detail-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--tb-s3); }
 .detail-head h2 { font-size: 1.5rem; line-height: 32px; }
 .detail-head .tb-select, .detail-head .tb-field { width: 200px; max-width: 100%; }
-.detail .tb-section { padding-block: var(--tb-s5) 0; }
-.detail h3 { font-size: 1.0625rem; line-height: 22px; }
+.detail .tb-section { gap: calc(var(--tb-s2) + 2px); padding-block: var(--tb-s4) 0; } /* mockup: 10px gap, 16px above */
+.detail .ops-block { gap: var(--tb-s2); } /* the allowed operations: no hairline above, 8px gap */
 
 .steps-list { display: grid; gap: 10px; counter-reset: s; list-style: none; padding: 0; margin: 0; }
 .steps-list li { counter-increment: s; display: grid; grid-template-columns: 32px 1fr; gap: 2px 8px; }
@@ -40,5 +40,8 @@
 
 @media (max-width: 960px) { .two-pane { grid-template-columns: 1fr; } .three { grid-template-columns: 1fr; } }
 @media (max-width: 720px) { .two { grid-template-columns: 1fr; } }
+/* C185: the page-head heading and lede sit 8px apart, the Drafts description is a plain paragraph */
+.head-text { gap: var(--tb-s2); }
+.page-desc { max-width: 62ch; }
 .detail .toolbar .tb-select { width: 220px; max-width: 100%; }
 .app-page > .toolbar .tb-field { width: 280px; max-width: 100%; }
