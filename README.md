@@ -2,7 +2,7 @@
 
 Evolution (product id `evolution`): the mini app that turns work your agents repeat into reviewed, versioned workflows, and exports a recipe that creates a Bound agent for a workflow. Workflows can run on a schedule through that Bound agent. Evolution never starts an agent and never calls a model. Built on the Miniapp SDK.
 
-**Status:** 0.2.11. Visibility: public, Apache-2.0. Published as the GHCR image `ghcr.io/tealbrick/opt2-tealbrick-evolution`. Step A (0.1): suggestions, owner review, drafts, versions, diffs, recipe export, Task Board pattern detector. Step B (0.2): schedules and runs claimed at most once by the Bound agent's own runner (`tealbrick agent serve` in routines mode); every run is a Task Board issue assigned to the Bound agent.
+**Status:** stable 0.2.11; `main` is 0.2.12-dev.1 (dev channel only). Visibility: public, Apache-2.0. Image: `ghcr.io/tealbrick/opt2-tealbrick-evolution` (publicly pullable; as of 2026-10-17 it holds the tag 0.2.12-dev.1; 0.2.11 and older were published under the former owner's GHCR namespace). Step A (0.1): suggestions, owner review, drafts, versions, diffs, recipe export, Task Board pattern detector. Step B (0.2): schedules and runs claimed at most once by the Bound agent's own runner (`tealbrick agent serve` in routines mode); every run is a Task Board issue assigned to the Bound agent.
 
 - Repository: `Tealbrick/opt2-tealbrick-evolution` (GitHub organisation `Tealbrick`)
 - Licence: Apache-2.0 for the app code (`LICENSE`, `NOTICE`); upstream licences are in `THIRD_PARTY_NOTICES.md`. The Tealbrick brand mark and app art are Tealbrick artwork and are not covered by the Apache-2.0 licence.
@@ -14,7 +14,7 @@ This repository is public. It must never contain secrets or personal data, and n
 - No API keys, tokens, passwords, private keys, deployment secrets, `.env` files or connection strings. Use `.env.example` with placeholder values only.
 - Runtime secrets live in the deployment platform (Railway variables) and are copied between services without printing them. CI holds no secrets.
 - No personal names, private agent configurations or customer data.
-- Every push runs a secret scan (gitleaks, the `secret-scan` step in `.woodpecker/ci.yaml`). GitHub secret scanning with push protection is enabled. Optional local guard: `pre-commit install`.
+- Every pull request, every push to `main` and every tag runs a secret scan (gitleaks, the `secret-scan` step in `.woodpecker/ci.yaml`). GitHub secret scanning and push protection are not enabled on this repository, so the CI scan is the guard. Optional local guard: `pre-commit install` (`.pre-commit-config.yaml` runs gitleaks).
 - If a secret is committed anyway: rotate it first, then remove it from history.
 
 ## What it does
