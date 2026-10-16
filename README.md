@@ -1,41 +1,38 @@
-# opt2-tealbrick-evolution
+# Evolving Workflows (Tealbrick mini app)
 
-Teal Brick opt2: **Evolution**, the miniapp that turns work your agents repeat into reviewed, versioned workflows,
-and exports a recipe that creates a Bound agent for a workflow (product id `evolution`).
+Evolution (product id `evolution`): the mini app that turns work your agents repeat into reviewed, versioned workflows, and exports a recipe that creates a Bound agent for a workflow. Workflows can run on a schedule through that Bound agent. Evolution never starts an agent and never calls a model. Built on the Miniapp SDK.
 
-**Status: opt2 build (clean-room v2 of Teal Brick), work in progress.** This repository is part of the opt2 build and
-lives under `Martin-Atrin` during the build; it moves to the Teal Brick organisation as one clean commit when opt2 is
-released. It is not the current production system.
+**Status:** 0.2.11. Visibility: public, Apache-2.0. Published as the GHCR image `ghcr.io/tealbrick/opt2-tealbrick-evolution`. Step A (0.1): suggestions, owner review, drafts, versions, diffs, recipe export, Task Board pattern detector. Step B (0.2): schedules and runs claimed at most once by the Bound agent's own runner (`tealbrick agent serve` in routines mode); every run is a Task Board issue assigned to the Bound agent.
 
-Owner lane: Lead · Evolution. 0.1 = "step A" (decision C83): suggestions, owner review, drafts, versions, diffs,
-recipe export, Kanban pattern detector. 0.2 = "step B": schedules and runs claimed at most once by the Bound agent's own
-runner (`tealbrick agent serve` routines mode); every run is a Kanban issue assigned to the Bound agent.
+- Repository: `Tealbrick/opt2-tealbrick-evolution` (GitHub organisation `Tealbrick`)
+- Licence: Apache-2.0 for the app code (`LICENSE`, `NOTICE`); upstream licences are in `THIRD_PARTY_NOTICES.md`. The Tealbrick brand mark and app art are Tealbrick artwork and are not covered by the Apache-2.0 licence.
 
 ## No secrets policy
 
-This repository is public. It must never contain secrets or personal data:
+This repository is public. It must never contain secrets or personal data, and neither may its issues or pull requests:
 
 - No API keys, tokens, passwords, private keys, deployment secrets, `.env` files or connection strings. Use `.env.example` with placeholder values only.
-- Runtime secrets live in the deployment platform (Railway variables) and are copied between services without printing them. Woodpecker holds no secrets (C72).
+- Runtime secrets live in the deployment platform (Railway variables) and are copied between services without printing them. CI holds no secrets.
 - No personal names, private agent configurations or customer data.
-- Every push runs a secret scan (gitleaks step in `.woodpecker/ci.yaml`). GitHub secret scanning with push protection is enabled. Optional local guard: `pre-commit install`.
+- Every push runs a secret scan (gitleaks, the `secret-scan` step in `.woodpecker/ci.yaml`). GitHub secret scanning with push protection is enabled. Optional local guard: `pre-commit install`.
 - If a secret is committed anyway: rotate it first, then remove it from history.
 
 ## What it does
 
 ```
-agent repeats work ──suggestion_create (evidence: Kanban issue ids / receipt call ids, steps)──┐
-Kanban done issues ──detector (same template or title, one agent, N ≥ 3)───────────────────────┤
-                                                                                               ▼
+agent repeats work ──suggestion_create (evidence: Task Board issue ids / receipt call ids, steps)──┐
+Task Board done issues ──detector (same template or title, one agent, N >= 3)──────────────────────┤
+                                                                                                   ▼
 owner (person ops): review → approve → draft (steps, allowed ops per product, trigger) → promote v1, v2 …
                     → diff versions → recipe_export (tealbrick.recipe/1) → owner imports + applies it in Portal
                     → a Bound agent whose grant allows only the workflow's operations
                     → schedule (cron, UTC) → the agent's runner: routines_due → routine_claim → one turn → routine_report
-                    → every run = one Kanban issue assigned to the Bound agent (template evolution:<workflow id>)
+                    → every run = one Task Board issue assigned to the Bound agent (template evolution:<workflow id>)
 ```
 
-The UI says it plainly: **the agent may call these operations** (the bridge blocks every other one); the steps are
-reviewed guidance, not an enforced program. Temporal and the v1 step runner are not part of opt2.
+The UI says it plainly: **the agent may call these operations** (the bridge blocks every other one); the steps are reviewed guidance, not an enforced program. The allow-list is enforced by the bridge. Temporal and the v1 step runner are not part of opt2.
+
+27 operations:
 
 | Operation | Audience | Purpose |
 |---|---|---|
@@ -43,35 +40,37 @@ reviewed guidance, not an enforced program. Temporal and the v1 step runner are 
 | `suggestions_list`, `suggestion_get` | agent | the caller's own suggestions and their status |
 | `workflow_get` | agent | a promoted workflow version (what a Bound agent reads) with the allowlist notice |
 | `review_suggestions`, `review_suggestion`, `suggestion_decide` | person | owner review: approve / reject / archive |
-| `detector_scan` | person | read done Kanban issues (companion `kanban.issues_list`) and suggest repeated work |
+| `detector_scan`, `detector_status` | person | read done Task Board issues (companion `kanban.issues_list`) and suggest repeated work; last scan result |
 | `templates_list`, `draft_create`, `drafts_list`, `draft_get`, `draft_update` | person | drafts from a suggestion, a seed template or blank; revisioned edits |
 | `workflow_promote`, `workflows_list`, `workflow_versions`, `workflow_diff` | person | versions (immutable snapshots) and diffs |
 | `recipe_export` | person | `agents.create` + `agents.policy_set` (bound, workflow ops) + `edges.create` per product |
 | `routines_due` | agent | Bound caller's due runs; pure read, the runner's poll target (Free callers get none) |
 | `routine_claim` | agent | `{occurrence}` → at most one claim ever succeeds; answers the reviewed workflow, or `claimed: false` + reason (`already_claimed`, `missed`, `not_due`, `paused`, `not_bound`, `version_missing`, `policy_stale`) |
-| `routine_report` | agent | `dispatched` → `completed` / `failed` / `uncertain` (+ summary); closes the run's Kanban issue |
-| `automation_set`, `automation_pause`, `automation_delete`, `automations_list`, `runs_list` | person | schedules (cron, version pin or active, applied policy version, Kanban project) and run history |
+| `routine_report` | agent | `dispatched` → `completed` / `failed` / `uncertain` (+ summary); closes the run's Task Board issue |
+| `automation_set`, `automation_pause`, `automations_list`, `runs_list` | person | schedules (cron, version pin or active, applied policy version, Task Board project) and run history |
+| `automation_delete` | person | deletes a schedule (destructive, held) |
 
 ### Schedules and runs (0.2)
-- occurrence = sha256 of `[automationId, revision, dueAt]`; the run row's primary key makes a claim at-most-once (v1 routines model).
-- Misfire grace (default 120 s, `cronDue`): a due time not claimed in time is recorded `missed` once, missed periods collapse into that record, and the next period runs; never a burst of catch-up runs.
-- `claimed` > 10 min or `dispatched` > 30 min without a report → `uncertain`, never offered again (a late report still closes it).
-- Following the active version: if it allows more than the version whose recipe the owner applied (`policyVersion`), claims answer `policy_stale` until the owner applies the new recipe and updates the schedule.
-- Kanban (companion `issue_create`, `issue_complete`, `issue_block`): one issue per claimed run, assigned to the Bound agent, template `evolution:<workflow id>`; the detector never suggests these. Kanban down → the run still runs (`kanbanSync: failed`).
-- Run issue project: the schedule's `kanbanProject`. Use a Kanban project the owner SHARES with the Bound agent, so the agent can read and comment on its run issues (Kanban gives shared projects to agents and to Evolution). Empty = Evolution's own Kanban project, which the agent sees only if the owner shares it. Every recipe allows `kanban.issue_get` and `kanban.issue_comment_add` for this.
-- Cron and the due / misfire rule: `nextCronTime` and `cronDue` from `@opt2-tealbrick/manifest` 0.1.7 (5 fields, UTC; the one shared helper, no local copy). `routines_due` only records runs that passed the grace as `missed`; it never claims.
 
-### Kanban (soft dependency)
-The manifest declares one companion: `kanban.issues_list` (read). Evolution calls it with
-`{"status": "done", "limit": 200}` and reads `issues[]` with `id`, `title`, `status`, `assignee {kind, id, name}`
-(Kanban 0.1; only `kind: "agent"` counts) and, if Kanban adds one later, `template` / `templateId`. Without Kanban
-the scan answers `unavailable` and Evolution works with agent suggestions alone. The scan runs in the background every 15 minutes (C85: an app-initiated companion call with Evolution's own grant, no op call) and on demand (`detector_scan`); `detector_status` shows the last result. C88/L12: what Evolution read with its own grant (Kanban titles and the text built from them) is shown only to the owner; agents see detector suggestions as fixed text plus issue ids. Evolution sees done work only in the projects the
-owner shares with it (Kanban shared projects, or projects granted to Evolution on Kanban's scopes page; decision C87).
+- occurrence = sha256 of `[automationId, revision, dueAt]`; the primary key of the run row (`routine_runs`) makes a claim at-most-once (v1 routines model).
+- Misfire grace (default 120 s, `cronDue`): a due time not claimed in time is recorded `missed` once, missed periods collapse into that record, and the next period runs; never a burst of catch-up runs.
+- `claimed` over 10 minutes or `dispatched` over 30 minutes without a report → `uncertain`, never offered again (a late report still closes it).
+- Following the active version: if it allows more than the version whose recipe the owner applied (`policyVersion`), claims answer `policy_stale` until the owner applies the new recipe and updates the schedule.
+- Task Board (companion `issue_create`, `issue_complete`, `issue_block`): one issue per claimed run, assigned to the Bound agent, template `evolution:<workflow id>`; the detector never suggests these. Task Board down → the run still runs (`kanbanSync: failed`).
+- Run issue project: the schedule's `kanbanProject`. Use a Task Board project the owner SHARES with the Bound agent, so the agent can read and comment on its run issues (shared projects reach agents and Evolution). Empty = Evolution's own Task Board project, which the agent sees only if the owner shares it. Every recipe allows `kanban.issue_get` and `kanban.issue_comment_add` for this.
+- Cron and the due / misfire rule: `nextCronTime` and `cronDue` from `@opt2-tealbrick/manifest` (5 fields, UTC; the one shared helper, no local copy). `routines_due` only records runs that passed the grace as `missed`; it never claims. Nothing starts runs on a timer; the runner is external.
+
+### Task Board (soft dependency)
+
+The manifest declares one companion product, `kanban`, with four operations: `issues_list` (read), `issue_create`, `issue_complete` and `issue_block`. The detector calls `issues_list` with `{"status": "done", "limit": 200}` and reads `issues[]` with `id`, `title`, `status`, `assignee {kind, id, name}` (only `kind: "agent"` counts) and `template`. Without Task Board the scan answers `unavailable` and Evolution works with agent suggestions alone (run issues are then not created). The scan runs in the background (first scan 60 s after start, then every 15 minutes) as an app-initiated companion call with Evolution's own grant, and on demand (`detector_scan`); `detector_status` shows the last result. What Evolution read with its own grant (Task Board titles and the text built from them) is shown only to the owner; agents see detector suggestions as fixed text plus issue ids. Evolution sees done work only in the projects the owner shares with it (shared projects, or projects granted to Evolution on the Task Board scopes page).
 
 ### Recipe
-`recipe_export` emits a `tealbrick.recipe/1` (PORTAL-API §3) with no `ws` and no concrete Portal id (`$ref` to step
-0's output). The Bound agent's allowlist always includes `evolution.workflow_get`. Apply it with
-`tealbrick recipe import <file>` and the review link, then one confirmation in the browser.
+
+`recipe_export` emits a `tealbrick.recipe/1` (Portal API section 3) with no `ws` and no concrete Portal id (`$ref` to step 0's output). The Bound agent's allowlist always includes `evolution.workflow_get`. Apply it with `tealbrick recipe import <file>` and the review link, then one confirmation in the browser. The default agent harness choice in the UI is "Other agent (MCP)".
+
+## Language
+
+New code is TypeScript (Node 24+).
 
 ## Layout
 
@@ -81,35 +80,53 @@ owner shares with it (Kanban shared projects, or projects granted to Evolution o
 | `src/app.ts` | `defineApp`: one typed handler per operation (`#kit` op ids and I/O types) |
 | `src/store.ts` | suggestions, events, drafts, workflows, versions over the SDK `Db` |
 | `src/model.ts` | pure rules: steps, allowlist, promotion checks, version diff |
-| `src/detector.ts` | Kanban pattern detector (harvest of the v1 evaluator) |
+| `src/detector.ts` | Task Board pattern detector (harvest of the v1 evaluator) |
+| `src/scan.ts` | the detector's background refresh and on-demand scan |
 | `src/recipe.ts` | Bound-agent recipe builder |
 | `src/routines.ts` | schedules, due/claim/report, missed records, sweep (cron rule from the manifest package) |
 | `src/templates.ts` | seed workflow templates |
 | `src/ui/` | owner UI in `<AppShell>`: Suggestions, Drafts, Workflows, Schedules, Holds, Agents |
-| `migrations/` | `0001_init.sql` (0.1), `0002_routines.sql` (0.2); forward-only, never edit a released file |
+| `migrations/` | 3 forward-only migrations: `0001_init.sql` (0.1), `0002_routines.sql` (0.2), `0003_detector_state.sql`. Never edit a released file. |
 | `skills/use-evolution/SKILL.md` | agent skill: when to suggest, Bound-agent behaviour |
-| `Dockerfile` | the one opt2 app Dockerfile pattern (SDK-API §15.1) |
-| `.woodpecker/ci.yaml`, `.github/workflows/opt2-release.yml` | opt2 CI template ci-v9.1 (generated, do not edit) |
+| `Dockerfile` | the one opt2 app Dockerfile pattern |
+| `.woodpecker/ci.yaml`, `.github/workflows/opt2-release.yml` | the opt2 CI template ci-v9.9, generated from `Tealbrick/opt2-tealbrick-platform`; do not edit |
+| `tealbrick-ci.json` | CI settings: kind `miniapp`, one image |
+| `conformance.start.ts` | boots the app for `tb-conformance` |
+| `test/` | model, detector, recipe, routine and flow checks, UI checks |
 
-Scaffolded with `create-tealbrick-miniapp` 0.1.5.
+Scaffolded with `create-tealbrick-miniapp`.
 
 ## Develop
 
 ```sh
-pnpm install --frozen-lockfile
+corepack enable && pnpm install --frozen-lockfile --ignore-scripts
 pnpm typecheck && pnpm lint && pnpm test
-pnpm build            # server to dist/, UI to dist/ui/assets-<hash>/
-pnpm conformance      # SDK conformance suite against this app
+pnpm build            # kit, server to dist/, UI to dist/ui/assets-<hash>/
+pnpm conformance      # SDK conformance suite against this app (not release evidence; QA is)
 pnpm gen              # tb-gen: openapi, kit, docs, railway (gen/, not committed)
-TB_STANDALONE=1 TB_DATA_DIR=.data TB_DATA_EPHEMERAL=1 pnpm start   # app-alone mode: person UI only
+TB_STANDALONE=1 TB_DATA_DIR=.data TB_DATA_EPHEMERAL=1 pnpm start   # app-alone mode: person UI only (operations answer 503 no_bridge)
 ```
+
+## Environment
+
+The SDK reads only `TB_*` variables (SDK API section 13). The Dockerfile defaults `TB_DATA_DIR=/data` (the `data` volume mount) and `TB_BACKUP_DIR=/data/backup` (one volume per service). The deploy recipe sets the rest: `TB_INSTANCE_ID`, `TB_ENROL_CODE`, `TB_BRIDGE_URL`, `TB_PORTAL_KEYS`, `TB_KEK`. Optional: `TB_LOG_LEVEL`, `TB_RESTORE_FROM`, `TB_STANDALONE`. The listen port is the manifest `runtime.port`. The app has no keys and no app-specific environment variables. `TB_DATA_EPHEMERAL=1` is for tests and local runs only; never set it in a deploy recipe.
 
 ## Release
 
 1. Set the same version in `package.json` and `tealbrick.manifest.json`.
-2. Tag `v<semver>` and push the tag. The GitHub Actions workflow builds and publishes the image and kit (C72/C76: release assets only from CI).
-3. The platform signer indexes the release.
+2. Tag `v<semver>` on a green pipeline and push the tag. The GitHub Actions workflow builds and publishes the image and kit (release assets only from CI). Tags are immutable.
+3. The platform signer indexes the release (`registry-sync` signs the index entry with the image digest and the manifest digest).
+4. Core deploys the newest stable version when the owner installs or updates the app. An update that fails keeps the previous version serving.
 
-## Language
+Check `publisher` and `source.repo` in the manifest. The repository name must match the image name in `tealbrick-ci.json` (`opt2-tealbrick-evolution`).
 
-New code is TypeScript (Node 24+).
+## Dependency pins
+
+`@opt2-tealbrick/*` dependencies are pinned as tarball URLs on the dist host (`Tealbrick/opt2-tealbrick-dist` releases). `pnpm-lock.yaml` carries the sha512 integrity of every such tarball. After changing one, run `pnpm install`, then `node <opt2-tealbrick-platform>/ci/tb-ci.ts pin-tarballs .`, then `pnpm install --frozen-lockfile`, and commit the lockfile. Image builds run `pnpm install --frozen-lockfile --ignore-scripts`.
+
+## Documentation
+
+- [`ARCHITECTURE.md`](ARCHITECTURE.md): design of this app (operations, scopes, data, background work).
+- [`CONTRIBUTING.md`](CONTRIBUTING.md): how to change it.
+- Runtime contract: `docs/SDK-API.md` in `Tealbrick/opt2-tealbrick-specs`. UI kit: `Tealbrick/opt2-tealbrick-packages`.
+- System documentation (overview, environments, runbooks) lives in the private repo Tealbrick/opt2-tealbrick-docs.
